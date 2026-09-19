@@ -2,6 +2,10 @@ package main
 
 import (
 	"embed"
+	"flag"
+	"log/slog"
+	"os"
+	"path/filepath"
 
 	"log"
 	"time"
@@ -28,6 +32,11 @@ func init() {
 // and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
 // logs any error that might occur.
 func main() {
+
+	logLevel := flag.String("log-level", "info", "add use lowercase level to set log level, default is 'info'")
+	flag.Parse()
+
+	initLogger(*logLevel)
 
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
@@ -84,4 +93,32 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func initLogger(logLevel string) {
+	raw := logLevel
+	var level slog.Level
+	if raw == "" {
+		level = slog.LevelInfo
+	} else if err := level.UnmarshalText([]byte(raw)); err != nil {
+		slog.SetDefault(newTextLogger(slog.LevelInfo))
+		slog.Warn("LOGGER_LEVEL invalid, using info", "value", raw)
+		return
+	}
+	slog.SetDefault(newTextLogger(level))
+}
+
+func newTextLogger(level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.SourceKey {
+				if src, ok := a.Value.Any().(*slog.Source); ok {
+					src.File = filepath.Base(src.File)
+				}
+			}
+			return a
+		},
+	}))
 }
