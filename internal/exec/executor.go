@@ -32,31 +32,37 @@ type Entry struct {
 	AutoStart bool     `json:"autoStart"`
 }
 
+type Command struct {
+	Path    string // 要启动的 exe
+	CmdLine string // 完整命令行
+}
+
 // BuildCommand 把 Entry 翻译成一条完整命令行。
 // Kind 不认识时返回 error。
-func BuildCommand(e Entry) (string, error) {
-
-	if !(e.Kind == "bat" || e.Kind == "cmd" || e.Kind == "ps1" || e.Kind == "exe" || e.Kind == "shell") {
+func BuildCommand(e Entry) (Command, error) {
+	if e.Kind != "bat" && e.Kind != "cmd" && e.Kind != "ps1" && e.Kind != "exe" && e.Kind != "shell" {
 		slog.Info("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式", "e.Kind", e.Kind)
-		return "", errors.New("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式")
+		return Command{}, errors.New("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式")
 	}
+
 	// 查看 Target 脚本是否存在
 	if _, err := os.Stat(e.Target); err != nil {
 		if e.Kind != "shell" {
 			slog.Info("Target 脚本不存在", "e.Target", e.Target)
-			return "", errors.New("target 脚本不存在")
+			return Command{}, errors.New("target 脚本不存在")
 		}
 	}
-	command := ""
+	cmdLine := ""
 	switch e.Kind {
 	case "bat", "cmd":
 		if e.Args == "" {
 			// example: cmd.exe /d /s /c ""C:\my tools\run.bat""
-			command = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\"\"", e.Target)
+			cmdLine = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\"\"", e.Target)
 		} else {
 			// example: cmd.exe /d /s /c ""C:\my tools\run.bat" --fast"
-			command = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\" %s\"", e.Target, e.Args)
+			cmdLine = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\" %s\"", e.Target, e.Args)
 		}
+		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
 	case "ps1":
 		args := ""
 		if e.Args == "" {
@@ -65,7 +71,8 @@ func BuildCommand(e Entry) (string, error) {
 			args = " " + e.Args
 		}
 		// example: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\my tools\run.ps1" --fast
-		command = fmt.Sprintf("powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%s\"%s", e.Target, args)
+		cmdLine = fmt.Sprintf("powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%s\"%s", e.Target, args)
+		return Command{Path: "powershell.exe", CmdLine: cmdLine}, nil
 	case "exe":
 		args := ""
 		if e.Args == "" {
@@ -73,12 +80,13 @@ func BuildCommand(e Entry) (string, error) {
 		} else {
 			args = " " + e.Args
 		}
-		// example: "C:\my tools\app.exe" --fast
-		command = fmt.Sprintf("\"%s\"%s", e.Target, args)
+		cmdLine = fmt.Sprintf("\"%s\"%s", e.Target, args)
+		return Command{Path: e.Target, CmdLine: cmdLine}, nil
 	case "shell":
-		command = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
+		cmdLine = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
+		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
 	}
-	return command, nil
+	return Command{}, errors.New("未知的 Kind")
 }
 
 // LaunchSpec 是「起一次会话」需要的全部输入。
@@ -87,6 +95,7 @@ func BuildCommand(e Entry) (string, error) {
 // 这里没有 Kind、没有 Mode：Kind 是拼命令行时才用的中间物；
 // Mode 决定用哪个 Executor 实现，是上层选实现的事，不是 Executor 的输入。
 type LaunchSpec struct {
+	Path    string   // 要启动的 exe
 	Command string   // 完整命令行
 	WorkDir string   // 空 = 当前目录
 	Env     []string // KEY=VALUE；nil = 继承当前进程

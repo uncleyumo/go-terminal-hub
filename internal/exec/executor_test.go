@@ -3,6 +3,7 @@ package exec
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,14 @@ func fixtures(t *testing.T) string {
 }
 
 // TestBuildCommand 的每条 want 都是 ARCHITECTURE.md §6 那张表逐字誊下来的，不是从实现反推的。
+//
+// 两条不变量：
+//   - Path    = 该行的第一个词，即 CreateProcess 要加载哪个 exe
+//   - CmdLine = §6 表里那一整行，含开头的程序名
+//
+// 为什么 CmdLine 必须含程序名：Windows 交给新进程的只有一个字符串，怎么拆是那个程序
+// 自己的事。cmd.exe / powershell.exe 是扫着读的（找 /c、找 -File），不含名字也能跑；
+// 但普通 exe 按位置读，第一个词就是它自己的名字——少了名字，参数全体错位，且零报错。
 func TestBuildCommand(t *testing.T) {
 	dir := fixtures(t)
 	batPath := filepath.Join(dir, "run.bat")
@@ -33,52 +42,63 @@ func TestBuildCommand(t *testing.T) {
 	exePath := filepath.Join(dir, "app.exe")
 
 	cases := []struct {
-		name   string
-		kind   string
-		target string
-		args   string
-		want   string
+		name     string
+		kind     string
+		target   string
+		args     string
+		wantPath string
+		want     string
 	}{
 		{
 			name: "bat 有 args",
 			kind: "bat", target: batPath, args: "--fast",
-			want: `cmd.exe /d /s /c ""` + batPath + `" --fast"`,
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /c ""` + batPath + `" --fast"`,
 		},
 		{
 			name: "bat 无 args",
 			kind: "bat", target: batPath, args: "",
-			want: `cmd.exe /d /s /c ""` + batPath + `""`,
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /c ""` + batPath + `""`,
 		},
 		{
 			name: "cmd 有 args",
 			kind: "cmd", target: cmdPath, args: "--fast",
-			want: `cmd.exe /d /s /c ""` + cmdPath + `" --fast"`,
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /c ""` + cmdPath + `" --fast"`,
 		},
 		{
 			name: "ps1 有 args",
 			kind: "ps1", target: ps1Path, args: "--fast",
-			want: `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "` + ps1Path + `" --fast`,
+			wantPath: "powershell.exe",
+			want:     `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "` + ps1Path + `" --fast`,
 		},
 		{
 			name: "ps1 无 args",
 			kind: "ps1", target: ps1Path, args: "",
-			want: `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "` + ps1Path + `"`,
+			wantPath: "powershell.exe",
+			want:     `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "` + ps1Path + `"`,
 		},
 		{
+			// 路径带空格，所以这对引号不是装饰：少了它，argv 会在空格处断成两截。
+			// 实测（2026-09-19）：CmdLine 不带引号时 argv[0] 只到 "\my"，"--fast" 被挤到 argv[2]。
 			name: "exe 有 args",
 			kind: "exe", target: exePath, args: "--fast",
-			want: `"` + exePath + `" --fast`,
+			wantPath: exePath,
+			want:     `"` + exePath + `" --fast`,
 		},
 		{
 			name: "exe 无 args",
 			kind: "exe", target: exePath, args: "",
-			want: `"` + exePath + `"`,
+			wantPath: exePath,
+			want:     `"` + exePath + `"`,
 		},
 		{
 			// shell 的 Target 是命令不是文件，所以 os.Stat 被跳过，不需要 fixture
 			name: "shell 原样丢给 cmd",
 			kind: "shell", target: "dir /b", args: "",
-			want: `cmd.exe /d /s /c dir /b`,
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /c dir /b`,
 		},
 	}
 
@@ -88,16 +108,25 @@ func TestBuildCommand(t *testing.T) {
 			if err != nil {
 				t.Fatalf("意外报错: %v", err)
 			}
-			if got != c.want {
-				t.Errorf("拼出来的命令行不对\n  得到: %s\n  期望: %s", got, c.want)
+			if got.Path != c.wantPath {
+				t.Errorf("Path 不对\n  得到: %s\n  期望: %s", got.Path, c.wantPath)
+			}
+			if got.CmdLine != c.want {
+				t.Errorf("拼出来的命令行不对\n  得到: %s\n  期望: %s", got.CmdLine, c.want)
 			}
 		})
 	}
 }
 
 func TestBuildCommandUnknownKind(t *testing.T) {
-	if _, err := BuildCommand(Entry{Kind: "python", Target: "x.py"}); err == nil {
-		t.Error("Kind 不认识时应该返回 error，实际返回了 nil")
+	_, err := BuildCommand(Entry{Kind: "python", Target: "x.py"})
+	if err == nil {
+		t.Fatal("Kind 不认识时应该返回 error，实际返回了 nil")
+	}
+	// Kind 校验挡在 os.Stat 前面：这里的路径也不存在，但报的必须是 Kind 的错。
+	// 否则 Kind 打错的人会收到"脚本不存在"，照着去查文件，方向直接跑偏。
+	if !strings.Contains(err.Error(), "bat") {
+		t.Errorf("应该报 Kind 不支持，实际: %v", err)
 	}
 }
 
