@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A go-terminal-hub application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/go-terminal-hub.exe %u
+Terminal=false
+Type=Application
+Icon=go-terminal-hub.exe
+Categories=Utility;
+StartupWMClass=go-terminal-hub.exe
+
+ 
