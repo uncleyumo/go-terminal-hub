@@ -9,6 +9,13 @@
 // 三个生命周期完全不同，别混着写。
 package exec
 
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+)
+
 // Entry 是一条预设配置（将来存进 %USERPROFILE%\.go-terminal-hub\data.json）。
 type Entry struct {
 	ID        string   `json:"id"`
@@ -26,15 +33,52 @@ type Entry struct {
 }
 
 // BuildCommand 把 Entry 翻译成一条完整命令行。
-//
-// 规则见 ARCHITECTURE.md §6。参数一律用原始字符串直传，绝不 split 再拼——
-// 那是 cmd.exe 引号地狱的唯一解。
-//
-// TODO(你)：按 §6 那张表把 4 个分支写出来（bat/cmd、ps1、exe、shell）。
 // Kind 不认识时返回 error。
 func BuildCommand(e Entry) (string, error) {
 
-	return "", nil
+	if !(e.Kind == "bat" || e.Kind == "cmd" || e.Kind == "ps1" || e.Kind == "exe" || e.Kind == "shell") {
+		slog.Info("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式", "e.Kind", e.Kind)
+		return "", errors.New("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式")
+	}
+	// 查看 Target 脚本是否存在
+	if _, err := os.Stat(e.Target); err != nil {
+		if e.Kind != "shell" {
+			slog.Info("Target 脚本不存在", "e.Target", e.Target)
+			return "", errors.New("target 脚本不存在")
+		}
+	}
+	command := ""
+	switch e.Kind {
+	case "bat", "cmd":
+		if e.Args == "" {
+			// example: cmd.exe /d /s /c ""C:\my tools\run.bat""
+			command = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\"\"", e.Target)
+		} else {
+			// example: cmd.exe /d /s /c ""C:\my tools\run.bat" --fast"
+			command = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\" %s\"", e.Target, e.Args)
+		}
+	case "ps1":
+		args := ""
+		if e.Args == "" {
+			args = ""
+		} else {
+			args = " " + e.Args
+		}
+		// example: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\my tools\run.ps1" --fast
+		command = fmt.Sprintf("powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%s\"%s", e.Target, args)
+	case "exe":
+		args := ""
+		if e.Args == "" {
+			args = ""
+		} else {
+			args = " " + e.Args
+		}
+		// example: "C:\my tools\app.exe" --fast
+		command = fmt.Sprintf("\"%s\"%s", e.Target, args)
+	case "shell":
+		command = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
+	}
+	return command, nil
 }
 
 // LaunchSpec 是「起一次会话」需要的全部输入。
