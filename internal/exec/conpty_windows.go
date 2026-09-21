@@ -1,18 +1,21 @@
 package exec
 
 import (
+	"errors"
 	"log/slog"
 	"syscall"
 
 	"github.com/aymanbagabas/go-pty"
+	"golang.org/x/sys/windows"
 )
 
 type ConPTYExecutor struct {
-	p      pty.Pty
-	cmd    *pty.Cmd
-	spec   LaunchSpec
-	outCh  chan []byte
-	doneCh chan ExitResult
+	term       pty.Pty
+	cmd        *pty.Cmd
+	spec       LaunchSpec
+	outCh      chan []byte
+	procExitCh chan ExitResult
+	readDoneCh chan struct{}
 }
 
 func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
@@ -48,31 +51,32 @@ func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
 		}
 		return err
 	}
-	outChannel := make(chan []byte)
-	exitResultChannel := make(chan ExitResult)
-	c.outCh = outChannel
-	c.doneCh = exitResultChannel
-	c.p = p
+
+	c.outCh = make(chan []byte)
+	c.procExitCh = make(chan ExitResult)
+	c.term = p
 	c.cmd = cmd
 	c.spec = spec
+	c.readDoneCh = make(chan struct{})
 
 	// handle output of the command
 	go func() {
+		defer close(c.readDoneCh)
 		buf := make([]byte, 4096)
 		for {
-			n, bufReadErr := c.p.Read(buf)
+			n, bufReadErr := c.term.Read(buf)
 			if n > 0 {
 				slog.Debug("read from pty", "bytes", n)
 				tempChannel := make([]byte, n)
 				copy(tempChannel, buf[:n])
-				outChannel <- tempChannel
+				c.outCh <- tempChannel
 			}
 			if bufReadErr != nil {
 				slog.Debug("failed to read from pty in current iteration", "err", bufReadErr)
 				break
 			}
 		}
-		close(outChannel)
+		close(c.outCh)
 	}()
 
 	// handle exit result of the command
@@ -82,8 +86,8 @@ func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
 		if c.cmd.ProcessState != nil {
 			exitCode = c.cmd.ProcessState.ExitCode()
 		}
-		exitResultChannel <- ExitResult{Code: exitCode, Err: waitErr}
-		close(exitResultChannel)
+		c.procExitCh <- ExitResult{Code: exitCode, Err: waitErr}
+		close(c.procExitCh)
 	}()
 	return nil
 }
@@ -92,28 +96,49 @@ func (c *ConPTYExecutor) Output() <-chan []byte {
 	return c.outCh
 }
 
-func (c *ConPTYExecutor) Done() <-chan ExitResult {
-	return c.doneCh
+func (c *ConPTYExecutor) ProcessExited() <-chan ExitResult {
+	return c.procExitCh
 }
 
 func (c *ConPTYExecutor) Write(b []byte) (int, error) {
-	//TODO implement me
-	panic("implement me")
+	if c.term == nil {
+		return 0, errors.New("pty is nil")
+	}
+	return c.term.Write(b)
 }
 
 func (c *ConPTYExecutor) Resize(cols, rows uint16) error {
+	if c.term == nil {
+		return errors.New("pty is nil")
+	}
 	slog.Debug("Resizing pty", "cols", cols, "rows", rows)
-	return c.p.Resize(int(cols), int(rows))
+	return c.term.Resize(int(cols), int(rows))
 }
 
-func (c *ConPTYExecutor) Stop() error {
-	//TODO implement me
-	panic("implement me")
+func (c *ConPTYExecutor) StopProcess() error {
+	if c.term == nil {
+		return errors.New("pty is nil")
+	}
+	_, err := c.term.Write([]byte{0x03})
+	return err
 }
 
-func (c *ConPTYExecutor) Close() error {
-	//TODO implement me
-	panic("implement me")
+func (c *ConPTYExecutor) CloseTerminal() error {
+	if c.term == nil {
+		return nil
+	}
+	handle := windows.Handle(c.term.Fd())
+	windows.ClosePseudoConsole(handle)
+	<-c.readDoneCh
+	v, ok := c.term.(pty.ConPty)
+	if !ok {
+		slog.Error("pty is not a ConPty")
+		return errors.New("pty is not a ConPty")
+	}
+	_ = v.InputPipe().Close()
+	_ = v.OutputPipe().Close()
+	c.term = nil
+	return nil
 }
 
 // 检查 ConPTYExecutor 是否实现了 Executor 接口

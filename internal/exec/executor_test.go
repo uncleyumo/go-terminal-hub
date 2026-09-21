@@ -140,7 +140,8 @@ func TestBuildCommandMissingTarget(t *testing.T) {
 	}
 }
 
-// TestConPTYExecutorStart 验证 Start 之后的两个出口：Output() 有字节，Done() 有退出码。
+// TestConPTYExecutorStart 走完一个 Executor 的完整生命周期：
+// Start → 排干 Output() → ProcessExited() → CloseTerminal() → Output() 关闭。
 //
 // ⚠️ 这个测试**不许**碰 c.cmd.Wait()。Wait 归 Executor 内部的 Wait goroutine 独占：
 // go-pty 的 wait() 在 defer 里做 `sys.done <- nil`，那个 channel 容量只有 1
@@ -159,11 +160,13 @@ func TestConPTYExecutorStart(t *testing.T) {
 		t.Fatal("Start 成功后 c.cmd 仍是 nil")
 	}
 
-	// 输出扔后台收：Output 的通道这一步不会关闭（进程死 ≠ 会话关），
-	// 主测试直接 range 会永远等不到头。
+	// 排干必须一直在跑：读循环往无缓冲 channel 送，没人收就永远堵在 send 上，
+	// CloseTerminal() 的第二步（<-readDoneCh）会跟着一起挂。
 	var mu sync.Mutex
 	var got []byte
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		for chunk := range c.Output() {
 			mu.Lock()
 			got = append(got, chunk...)
@@ -171,32 +174,35 @@ func TestConPTYExecutorStart(t *testing.T) {
 		}
 	}()
 
+	// 进程时钟。到货只说明进程死了——终端还活着、读循环还卡在 Read。
 	select {
-	case res := <-c.Done():
+	case res := <-c.ProcessExited():
 		if res.Err != nil {
-			t.Fatalf("Done 带回错误: %v", res.Err)
+			t.Fatalf("ProcessExited 带回错误: %v", res.Err)
 		}
 		if res.Code != 0 {
 			t.Errorf("退出码 = %d, 期望 0", res.Code)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("5s 内没等到 Done")
+		t.Fatal("5s 内没等到 ProcessExited")
 	}
 
-	// 进程死 ≠ 输出读完了（Wait 只等内核那个状态位）。给读循环一点时间把尾巴吐出来，
-	// 别用固定 sleep 猜——轮询到就返回，超时才判失败。
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		ok := bytes.Contains(got, []byte("hello-conpty"))
-		mu.Unlock()
-		if ok {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	// 终端时钟。四步：关会话 → 等读循环排干 → 关管道 → 丢 term 引用。
+	if err := c.CloseTerminal(); err != nil {
+		t.Fatalf("CloseTerminal 返回错误: %v", err)
+	}
+
+	// 读时钟。Output() 关闭 == 读循环已排干并退出。
+	// CloseTerminal() 返回时这一步就该成立——不成立说明第二步等错了东西。
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("CloseTerminal 返回后 Output() 仍未关闭——读循环没退出")
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	t.Errorf("输出里没找到 hello-conpty，收到的是 %q", got)
+	if !bytes.Contains(got, []byte("hello-conpty")) {
+		t.Errorf("输出里没找到 hello-conpty，收到的是 %q", got)
+	}
 }

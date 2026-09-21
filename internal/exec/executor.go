@@ -116,16 +116,16 @@ type ExitResult struct {
 // 生命周期：
 //
 //	Start(spec)
-//	  → 持续消费 Output() 和 Done() 两个 channel（各起一个 goroutine）
-//	  → 进程自然退出，或用户调 Stop() 请求停止
-//	  → Done() 收到 ExitResult
-//	  → Close() 收尾
+//	  → 持续消费 Output() 和 ProcessExited() 两个 channel（各起一个 goroutine）
+//	  → 进程自然退出，或用户调 StopProcess() 请求停止
+//	  → ProcessExited() 收到 ExitResult
+//	  → CloseTerminal() 收尾
 //
 // 为什么读循环放在 Executor 内部，而不是暴露一个 io.Reader 让上层自己读：
 // 收尾流程「关会话 → 等读循环排干 → 关管道」是 ConPTY 专属知识（ARCHITECTURE.md §5）。
 // 读循环一旦归上层，这套知识就漏进 Session，M4 的管道模式还得让 Session 再学一套。
 type Executor interface {
-	// Start 起进程。返回 nil 只代表创建成功，不代表进程跑起来了——死活看 Done()。
+	// Start 起进程。返回 nil 只代表创建成功，不代表进程跑起来了——死活看 ProcessExited()。
 	Start(spec LaunchSpec) error
 
 	// Output 是终端输出流，由 Executor 内部的读循环写入。
@@ -134,8 +134,8 @@ type Executor interface {
 	// ⚠️ 收尾时必须一直读到它关闭为止：读循环可能正阻塞在发送上，中途停读会死锁。
 	Output() <-chan []byte
 
-	// Done 在会话结束时收到恰好一个值，随后关闭。
-	Done() <-chan ExitResult
+	// ProcessExited 在进程退出时收到恰好一个值，随后关闭。
+	ProcessExited() <-chan ExitResult
 
 	// Write 往终端写输入，等于在键盘上打字。
 	Write(b []byte) (int, error)
@@ -144,14 +144,15 @@ type Executor interface {
 	// 初始尺寸走 LaunchSpec，这里只管运行中的改动。
 	Resize(cols, rows uint16) error
 
-	// Stop 请求停止进程：写 \x03 → 等 3s → 强杀兜底。幂等。
+	// StopProcess 请求停止进程：往终端输入写 \x03（Ctrl-C），随即返回。幂等。
 	//
-	// 不负责收尾——它只管让进程死。停止完成后 Done() 会收到值。
-	Stop() error
+	// 是请求不是保证——程序可以不理。超时与强杀兜底归调用方，不在这里。
+	// 不负责收尾。进程真死了 ProcessExited() 会收到值。
+	StopProcess() error
 
-	// Close 收尾会话资源：关会话 → 等读循环排干 → 关管道 → 丢掉 p 的引用。
+	// CloseTerminal 收尾终端资源：关会话 → 等读循环排干 → 关管道 → 丢掉 term 的引用。
 	//
-	// ⚠️ 必须在 Done() 收到之后调。
+	// ⚠️ 必须在 ProcessExited() 收到之后调。
 	// ⚠️ 实现里绝不能再调 go-pty 的 p.Close()——M1 实测堆损坏 0xc0000374，2/2 复现。
-	Close() error
+	CloseTerminal() error
 }
