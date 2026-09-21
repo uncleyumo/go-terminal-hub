@@ -1,10 +1,13 @@
 package exec
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // fixtures 在临时目录里造出测试用的文件，返回目录。
@@ -135,4 +138,65 @@ func TestBuildCommandMissingTarget(t *testing.T) {
 	if _, err := BuildCommand(Entry{Kind: "bat", Target: missing}); err == nil {
 		t.Error("Target 不存在时应该返回 error，实际返回了 nil")
 	}
+}
+
+// TestConPTYExecutorStart 验证 Start 之后的两个出口：Output() 有字节，Done() 有退出码。
+//
+// ⚠️ 这个测试**不许**碰 c.cmd.Wait()。Wait 归 Executor 内部的 Wait goroutine 独占：
+// go-pty 的 wait() 在 defer 里做 `sys.done <- nil`，那个 channel 容量只有 1
+// 且只在设了 ctx 时才有读者（cmd_windows.go:100 / :173 / :203）。
+// 并发第二次调 Wait() 会永久卡死在那句上，表现是 flaky 挂起，不是报错。
+func TestConPTYExecutorStart(t *testing.T) {
+	c := &ConPTYExecutor{}
+	err := c.Start(LaunchSpec{
+		Path:    "cmd.exe",
+		Command: `cmd.exe /d /s /c "echo hello-conpty"`,
+	})
+	if err != nil {
+		t.Fatalf("Start 返回错误: %v", err)
+	}
+	if c.cmd == nil {
+		t.Fatal("Start 成功后 c.cmd 仍是 nil")
+	}
+
+	// 输出扔后台收：Output 的通道这一步不会关闭（进程死 ≠ 会话关），
+	// 主测试直接 range 会永远等不到头。
+	var mu sync.Mutex
+	var got []byte
+	go func() {
+		for chunk := range c.Output() {
+			mu.Lock()
+			got = append(got, chunk...)
+			mu.Unlock()
+		}
+	}()
+
+	select {
+	case res := <-c.Done():
+		if res.Err != nil {
+			t.Fatalf("Done 带回错误: %v", res.Err)
+		}
+		if res.Code != 0 {
+			t.Errorf("退出码 = %d, 期望 0", res.Code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("5s 内没等到 Done")
+	}
+
+	// 进程死 ≠ 输出读完了（Wait 只等内核那个状态位）。给读循环一点时间把尾巴吐出来，
+	// 别用固定 sleep 猜——轮询到就返回，超时才判失败。
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		ok := bytes.Contains(got, []byte("hello-conpty"))
+		mu.Unlock()
+		if ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	t.Errorf("输出里没找到 hello-conpty，收到的是 %q", got)
 }

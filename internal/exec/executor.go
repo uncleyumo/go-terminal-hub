@@ -41,15 +41,15 @@ type Command struct {
 // Kind 不认识时返回 error。
 func BuildCommand(e Entry) (Command, error) {
 	if e.Kind != "bat" && e.Kind != "cmd" && e.Kind != "ps1" && e.Kind != "exe" && e.Kind != "shell" {
-		slog.Info("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式", "e.Kind", e.Kind)
-		return Command{}, errors.New("暂不支持除了 bat / cmd / ps1 / exe / shell 以外的脚本格式")
+		slog.Info("script formats other than bat / cmd / ps1 / exe / shell are not supported for the time being", "e.Kind", e.Kind)
+		return Command{}, errors.New("script formats other than bat / cmd / ps1 / exe / shell are not supported for the time being")
 	}
 
 	// 查看 Target 脚本是否存在
 	if _, err := os.Stat(e.Target); err != nil {
 		if e.Kind != "shell" {
-			slog.Info("Target 脚本不存在", "e.Target", e.Target)
-			return Command{}, errors.New("target 脚本不存在")
+			slog.Info("target is missing", "e.Target", e.Target)
+			return Command{}, errors.New("target is missing")
 		}
 	}
 	cmdLine := ""
@@ -86,7 +86,7 @@ func BuildCommand(e Entry) (Command, error) {
 		cmdLine = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
 		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
 	}
-	return Command{}, errors.New("未知的 Kind")
+	return Command{}, errors.New("unknown Kind")
 }
 
 // LaunchSpec 是「起一次会话」需要的全部输入。
