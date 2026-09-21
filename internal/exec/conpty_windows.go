@@ -141,5 +141,12 @@ func (c *ConPTYExecutor) CloseTerminal() error {
 	return nil
 }
 
+func (c *ConPTYExecutor) KillProcess() error {
+	if c.cmd == nil {
+		return errors.New("cmd is nil")
+	}
+	return c.cmd.Process.Kill()
+}
+
 // 检查 ConPTYExecutor 是否实现了 Executor 接口
 var _ Executor = (*ConPTYExecutor)(nil)

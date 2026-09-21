@@ -155,4 +155,6 @@ type Executor interface {
 	// ⚠️ 必须在 ProcessExited() 收到之后调。
 	// ⚠️ 实现里绝不能再调 go-pty 的 p.Close()——M1 实测堆损坏 0xc0000374，2/2 复现。
 	CloseTerminal() error
+
+	KillProcess() error
 }
