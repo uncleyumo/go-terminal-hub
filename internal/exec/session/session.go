@@ -45,6 +45,7 @@ func (s *Session) drainLoop() {
 // reapLoop the real ending process of session, no matter normal or abnormal
 func (s *Session) reapLoop() {
 	res := <-s.ex.ProcessExited()
+	s.exitResult = res
 	close(s.doneCh)
 	_ = s.ex.CloseTerminal()
 	s.sink.OnProcessExited(res)
