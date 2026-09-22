@@ -1,4 +1,4 @@
-package exec
+package conpty
 
 import (
 	"errors"
@@ -6,19 +6,20 @@ import (
 	"syscall"
 
 	"github.com/aymanbagabas/go-pty"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"golang.org/x/sys/windows"
 )
 
 type ConPTYExecutor struct {
 	term       pty.Pty
 	cmd        *pty.Cmd
-	spec       LaunchSpec
+	spec       executor.LaunchSpec
 	outCh      chan []byte
-	procExitCh chan ExitResult
+	procExitCh chan executor.ExitResult
 	readDoneCh chan struct{}
 }
 
-func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
+func (c *ConPTYExecutor) Start(spec executor.LaunchSpec) error {
 	p, err := pty.New()
 	if err != nil {
 		slog.Error("Failed to create pty", "err", err)
@@ -53,7 +54,7 @@ func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
 	}
 
 	c.outCh = make(chan []byte)
-	c.procExitCh = make(chan ExitResult)
+	c.procExitCh = make(chan executor.ExitResult)
 	c.term = p
 	c.cmd = cmd
 	c.spec = spec
@@ -86,7 +87,7 @@ func (c *ConPTYExecutor) Start(spec LaunchSpec) error {
 		if c.cmd.ProcessState != nil {
 			exitCode = c.cmd.ProcessState.ExitCode()
 		}
-		c.procExitCh <- ExitResult{Code: exitCode, Err: waitErr}
+		c.procExitCh <- executor.ExitResult{Code: exitCode, Err: waitErr}
 		close(c.procExitCh)
 	}()
 	return nil
@@ -96,7 +97,7 @@ func (c *ConPTYExecutor) Output() <-chan []byte {
 	return c.outCh
 }
 
-func (c *ConPTYExecutor) ProcessExited() <-chan ExitResult {
+func (c *ConPTYExecutor) ProcessExited() <-chan executor.ExitResult {
 	return c.procExitCh
 }
 
@@ -149,4 +150,4 @@ func (c *ConPTYExecutor) KillProcess() error {
 }
 
 // 检查 ConPTYExecutor 是否实现了 Executor 接口
-var _ Executor = (*ConPTYExecutor)(nil)
+var _ executor.Executor = (*ConPTYExecutor)(nil)

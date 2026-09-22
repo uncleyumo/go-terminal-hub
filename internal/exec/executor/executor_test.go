@@ -1,4 +1,4 @@
-package exec
+package executor
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
 )
 
 // fixtures 在临时目录里造出测试用的文件，返回目录。
@@ -148,7 +150,7 @@ func TestBuildCommandMissingTarget(t *testing.T) {
 // 且只在设了 ctx 时才有读者（cmd_windows.go:100 / :173 / :203）。
 // 并发第二次调 Wait() 会永久卡死在那句上，表现是 flaky 挂起，不是报错。
 func TestConPTYExecutorStart(t *testing.T) {
-	c := &ConPTYExecutor{}
+	c := &conpty.ConPTYExecutor{}
 	err := c.Start(LaunchSpec{
 		Path:    "cmd.exe",
 		Command: `cmd.exe /d /s /c "echo hello-conpty"`,

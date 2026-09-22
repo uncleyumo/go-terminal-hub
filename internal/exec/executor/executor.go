@@ -7,7 +7,7 @@
 //	Session  —— 一次运行实例。不在本文件，M2 第三步。
 //
 // 三个生命周期完全不同，别混着写。
-package exec
+package executor
 
 import (
 	"errors"

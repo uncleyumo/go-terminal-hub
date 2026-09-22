@@ -1,27 +1,29 @@
-package exec
+package session
 
 import (
 	"log/slog"
 	"time"
+
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 )
 
 type Sink interface {
 	OnOutput(chunk []byte)
-	OnProcessExited(res ExitResult)
+	OnProcessExited(res executor.ExitResult)
 }
 
 type Session struct {
 	id     string
-	ex     Executor
+	ex     executor.Executor
 	sink   Sink
 	doneCh chan struct{}
 }
 
-func NewSession(id string, ex Executor, sink Sink) *Session {
+func NewSession(id string, ex executor.Executor, sink Sink) *Session {
 	return &Session{id, ex, sink, make(chan struct{})}
 }
 
-func (s *Session) Start(spec LaunchSpec) error {
+func (s *Session) Start(spec executor.LaunchSpec) error {
 	err := s.ex.Start(spec)
 	if err != nil {
 		slog.Error("failed to start session", "err", err)
