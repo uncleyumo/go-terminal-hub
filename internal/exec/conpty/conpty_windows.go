@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+//goland:noinspection GoNameStartsWithPackageName
 type ConPTYExecutor struct {
 	term       pty.Pty
 	cmd        *pty.Cmd
