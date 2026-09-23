@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
@@ -18,14 +19,15 @@ type Record struct {
 }
 
 type Hub struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	records map[string]*Record
 }
 
 type RecordStatus struct {
-	ID string
-	executor.ExitResult
-	Running bool
+	ID       string
+	ExitCode int
+	ErrMsg   string
+	Running  bool
 }
 
 func NewHub() *Hub {
@@ -57,7 +59,6 @@ func (h *Hub) Start(id string, sink session.Sink) error {
 	}
 	entry := executor.BuildEntry(dataStore)
 	var s *session.Session
-	// go
 	switch entry.Mode {
 	case "terminal":
 		s = session.NewSession(id, &conpty.ConPTYExecutor{}, sink)
@@ -93,10 +94,12 @@ func (h *Hub) Write(id string, b []byte) (int, error) {
 
 	record, ok := h.records[id]
 	if !ok {
+		h.mu.Unlock()
 		return 0, errors.New("record not found for id: " + id)
 	}
-	if result, done := record.sess.Result(); done != false {
-		return 0, errors.New(fmt.Sprintf("session is already done with result: %v", result))
+	if result, done := record.sess.Result(); done {
+		h.mu.Unlock()
+		return 0, fmt.Errorf("session is already done with result: %v", result)
 	}
 	sess := record.sess
 	h.mu.Unlock()
@@ -108,9 +111,11 @@ func (h *Hub) Resize(id string, cols, rows uint16) error {
 
 	record, ok := h.records[id]
 	if !ok {
+		h.mu.Unlock()
 		return errors.New("record not found for id: " + id)
 	}
 	if _, done := record.sess.Result(); done {
+		h.mu.Unlock()
 		return errors.New("session is already done")
 	}
 	sess := record.sess
@@ -123,9 +128,11 @@ func (h *Hub) Stop(id string) error {
 
 	record, ok := h.records[id]
 	if !ok {
+		h.mu.Unlock()
 		return errors.New("record not found for id: " + id)
 	}
 	if _, done := record.sess.Result(); done {
+		h.mu.Unlock()
 		return errors.New("session is already done")
 	}
 	sess := record.sess
@@ -152,17 +159,39 @@ func (h *Hub) Remove(id string) error {
 }
 
 func (h *Hub) ListRecordStatus() []RecordStatus {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	var result []RecordStatus
 	for id, record := range h.records {
 		exitResult, done := record.sess.Result()
-		result = append(result, RecordStatus{
-			ID:         id,
-			ExitResult: exitResult,
-			Running:    !done,
-		})
+		if done {
+			if exitResult.Err != nil {
+				result = append(result, RecordStatus{
+					ID:       id,
+					ExitCode: exitResult.Code,
+					ErrMsg:   exitResult.Err.Error(),
+					Running:  false,
+				})
+			} else {
+				result = append(result, RecordStatus{
+					ID:       id,
+					ExitCode: exitResult.Code,
+					ErrMsg:   "",
+					Running:  false,
+				})
+			}
+		} else {
+			result = append(result, RecordStatus{
+				ID:       id,
+				ExitCode: -1,
+				ErrMsg:   "",
+				Running:  true,
+			})
+		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID > result[j].ID
+	})
 	return result
 }

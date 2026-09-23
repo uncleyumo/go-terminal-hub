@@ -3,6 +3,7 @@ package conpty
 import (
 	"errors"
 	"log/slog"
+	"sync"
 	"syscall"
 
 	"github.com/aymanbagabas/go-pty"
@@ -12,6 +13,8 @@ import (
 
 //goland:noinspection GoNameStartsWithPackageName
 type ConPTYExecutor struct {
+	startMu    sync.Mutex
+	mu         sync.Mutex
 	term       pty.Pty
 	cmd        *pty.Cmd
 	spec       executor.LaunchSpec
@@ -21,6 +24,10 @@ type ConPTYExecutor struct {
 }
 
 func (c *ConPTYExecutor) Start(spec executor.LaunchSpec) error {
+	c.startMu.Lock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	defer c.startMu.Unlock()
 	p, err := pty.New()
 	if err != nil {
 		slog.Error("Failed to create pty", "err", err)
@@ -103,29 +110,40 @@ func (c *ConPTYExecutor) ProcessExited() <-chan executor.ExitResult {
 }
 
 func (c *ConPTYExecutor) Write(b []byte) (int, error) {
-	if c.term == nil {
+	c.mu.Lock()
+	t := c.term
+	c.mu.Unlock()
+	if t == nil {
 		return 0, errors.New("pty is nil")
 	}
-	return c.term.Write(b)
+	return t.Write(b)
 }
 
 func (c *ConPTYExecutor) Resize(cols, rows uint16) error {
-	if c.term == nil {
+	c.mu.Lock()
+	t := c.term
+	c.mu.Unlock()
+	if t == nil {
 		return errors.New("pty is nil")
 	}
 	slog.Debug("Resizing pty", "cols", cols, "rows", rows)
-	return c.term.Resize(int(cols), int(rows))
+	return t.Resize(int(cols), int(rows))
 }
 
 func (c *ConPTYExecutor) StopProcess() error {
-	if c.term == nil {
+	c.mu.Lock()
+	t := c.term
+	c.mu.Unlock()
+	if t == nil {
 		return errors.New("pty is nil")
 	}
-	_, err := c.term.Write([]byte{0x03})
+	_, err := t.Write([]byte{0x03})
 	return err
 }
 
 func (c *ConPTYExecutor) CloseTerminal() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.term == nil {
 		return nil
 	}
@@ -144,10 +162,13 @@ func (c *ConPTYExecutor) CloseTerminal() error {
 }
 
 func (c *ConPTYExecutor) KillProcess() error {
-	if c.cmd == nil {
+	c.startMu.Lock()
+	cmd := c.cmd
+	c.startMu.Unlock()
+	if cmd == nil {
 		return errors.New("cmd is nil")
 	}
-	return c.cmd.Process.Kill()
+	return cmd.Process.Kill()
 }
 
 // 检查 ConPTYExecutor 是否实现了 Executor 接口

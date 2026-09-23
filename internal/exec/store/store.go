@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/google/uuid"
@@ -39,7 +40,7 @@ var (
 )
 
 type Store struct {
-	mu           sync.RWMutex
+	mu           sync.Mutex
 	dataFilePath string
 	dataList     map[string]DataStore
 }
@@ -128,11 +129,7 @@ func (s *Store) Add(data DataStore) error {
 	if err != nil {
 		return err
 	}
-
-	// if data.ID is empty, use uuid7.String() as default
-	if data.ID == "" {
-		data.ID = uuid7.String()
-	}
+	data.ID = uuid7.String()
 
 	if s.dataList == nil {
 		s.dataList = make(map[string]DataStore)
@@ -153,12 +150,28 @@ func (s *Store) Remove(id string) error {
 }
 
 func (s *Store) GetOne(id string) (DataStore, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if s.dataList == nil {
 		return DataStore{}, false
 	}
 	data, ok := s.dataList[id]
 	return data, ok
+}
+
+func (s *Store) List() []DataStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dataList == nil {
+		return []DataStore{}
+	}
+	list := make([]DataStore, 0, len(s.dataList))
+	for _, data := range s.dataList {
+		list = append(list, data)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ID > list[j].ID
+	})
+	return list
 }
