@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type DataStore struct {
@@ -22,6 +24,13 @@ type DataStore struct {
 	Rows      uint16   `json:"rows"`
 	AutoStart bool     `json:"autoStart"`
 }
+
+const (
+	// -rw-r--r--, 普通文件默认（配置、JSON、日志、数据文件）
+	permFile os.FileMode = 0o644
+	// -rwxr-xr-x, 目录默认 / 可执行脚本 / 二进制
+	permDir os.FileMode = 0o755
+)
 
 var (
 	once    sync.Once
@@ -55,7 +64,8 @@ func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := os.MkdirAll(filepath.Dir(s.dataFilePath), 0o755); err != nil {
+	// o: octal,
+	if err := os.MkdirAll(filepath.Dir(s.dataFilePath), permDir); err != nil {
 		return err
 	}
 
@@ -97,7 +107,7 @@ func (s *Store) writeLocked(data map[string]DataStore) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.dataFilePath, raw, 0o644)
+	return os.WriteFile(s.dataFilePath, raw, permFile)
 }
 
 func loadDataFilePath() string {
@@ -108,4 +118,47 @@ func loadDataFilePath() string {
 		return filepath.Join(home, ".go-terminal-hub", "data.json")
 	}
 	return filepath.Join(".go-terminal-hub", "data.json")
+}
+
+func (s *Store) Add(data DataStore) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	uuid7, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+
+	// if data.ID is empty, use uuid7.String() as default
+	if data.ID == "" {
+		data.ID = uuid7.String()
+	}
+
+	if s.dataList == nil {
+		s.dataList = make(map[string]DataStore)
+	}
+	s.dataList[uuid7.String()] = data
+	return s.writeLocked(s.dataList)
+}
+
+func (s *Store) Remove(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.dataList == nil {
+		return nil
+	}
+	delete(s.dataList, id)
+	return s.writeLocked(s.dataList)
+}
+
+func (s *Store) GetOne(id string) (DataStore, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.dataList == nil {
+		return DataStore{}, false
+	}
+	data, ok := s.dataList[id]
+	return data, ok
 }

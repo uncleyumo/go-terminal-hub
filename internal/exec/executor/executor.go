@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
 )
 
 // Entry 是一条预设配置（将来存进 %USERPROFILE%\.go-terminal-hub\data.json）。
@@ -78,6 +80,23 @@ func BuildCommand(e Entry) (Command, error) {
 		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
 	}
 	return Command{}, errors.New("unknown Kind")
+}
+
+func BuildEntry(store store.DataStore) Entry {
+	return Entry{
+		ID:        store.ID,
+		Name:      store.Name,
+		Kind:      store.Kind,
+		Target:    store.Target,
+		Args:      store.Args,
+		WorkDir:   store.WorkDir,
+		Env:       store.Env,
+		Mode:      store.Mode,
+		Encoding:  store.Encoding,
+		Cols:      store.Cols,
+		Rows:      store.Rows,
+		AutoStart: store.AutoStart,
+	}
 }
 
 // LaunchSpec 是「起一次会话」需要的全部输入。
