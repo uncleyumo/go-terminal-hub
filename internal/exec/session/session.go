@@ -13,15 +13,16 @@ type Sink interface {
 }
 
 type Session struct {
-	id         string
-	ex         executor.Executor
-	sink       Sink
-	doneCh     chan struct{}
-	exitResult executor.ExitResult
+	id          string
+	ex          executor.Executor
+	sink        Sink
+	doneCh      chan struct{}
+	exitResult  executor.ExitResult
+	drainExitCh chan struct{}
 }
 
 func NewSession(id string, ex executor.Executor, sink Sink) *Session {
-	return &Session{id, ex, sink, make(chan struct{}), executor.ExitResult{}}
+	return &Session{id, ex, sink, make(chan struct{}), executor.ExitResult{}, make(chan struct{})}
 }
 
 func (s *Session) Start(spec executor.LaunchSpec) error {
@@ -40,6 +41,7 @@ func (s *Session) drainLoop() {
 	for chunk := range s.ex.Output() {
 		s.sink.OnOutput(chunk)
 	}
+	close(s.drainExitCh)
 }
 
 // reapLoop the real ending process of session, no matter normal or abnormal
@@ -48,6 +50,8 @@ func (s *Session) reapLoop() {
 	s.exitResult = res
 	close(s.doneCh)
 	_ = s.ex.CloseTerminal()
+	// wait for drainLoop to finish
+	<-s.drainExitCh
 	s.sink.OnProcessExited(res)
 }
 
