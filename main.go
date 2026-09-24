@@ -10,6 +10,9 @@ import (
 	"log"
 	"time"
 
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/session"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -83,6 +86,30 @@ func main() {
 			now := time.Now().Format(time.RFC1123)
 			app.Event.Emit("time", now)
 			time.Sleep(time.Second)
+		}
+	}()
+
+	go func() {
+		sink := emitSink{app, "demo"}
+		s := session.NewSession("demo", &conpty.ConPTYExecutor{}, &sink)
+		command, err := executor.BuildCommand(
+			executor.Entry{
+				Kind:   "bat",
+				Target: "E:\\Dev_work\\Go_Dev\\go_projects\\go-terminal-hub\\test\\demo\\test.bat",
+			})
+		if err != nil {
+			return
+		}
+		err = s.Start(executor.LaunchSpec{
+			Path:    command.Path,
+			Command: command.CmdLine,
+			WorkDir: "",
+			Env:     nil,
+			Cols:    80,
+			Rows:    25,
+		})
+		if err != nil {
+			return
 		}
 	}()
 
