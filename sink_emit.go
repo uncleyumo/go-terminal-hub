@@ -24,7 +24,7 @@ type exitPayload struct {
 }
 
 func (e *emitSink) OnOutput(chunk []byte) {
-	slog.Info("process output", "text", string(chunk))
+	slog.Debug("process output", "text", string(chunk))
 	e.app.Event.Emit("session:output", outputPayload{
 		ID:   e.id,
 		Text: string(chunk),

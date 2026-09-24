@@ -90,8 +90,8 @@ func main() {
 	}()
 
 	go func() {
-		sink := emitSink{app, "demo"}
-		s := session.NewSession("demo", &conpty.ConPTYExecutor{}, &sink)
+		sink := NewBatchingSink(&emitSink{app, "demo"})
+		s := session.NewSession("demo", &conpty.ConPTYExecutor{}, sink)
 		command, err := executor.BuildCommand(
 			executor.Entry{
 				Kind:   "bat",

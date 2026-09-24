@@ -14,3 +14,5 @@ tmp
 
 .idea
 **/*.exe
+/task
+/wailsv3
