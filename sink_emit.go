@@ -13,14 +13,14 @@ type emitSink struct {
 }
 
 type outputPayload struct {
-	ID   string
-	Text string
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 type exitPayload struct {
-	ID     string
-	Code   int
-	ErrMsg string
+	ID     string `json:"id"`
+	Code   int    `json:"code"`
+	ErrMsg string `json:"errMsg"`
 }
 
 func (e *emitSink) OnOutput(chunk []byte) {

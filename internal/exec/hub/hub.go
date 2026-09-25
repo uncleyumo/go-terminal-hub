@@ -14,7 +14,7 @@ import (
 )
 
 type Record struct {
-	Entry executor.Entry
+	Entry executor.Entry `json:"entry"`
 	sess  *session.Session
 }
 
@@ -24,10 +24,10 @@ type Hub struct {
 }
 
 type RecordStatus struct {
-	ID       string
-	ExitCode int
-	ErrMsg   string
-	Running  bool
+	ID       string `json:"id"`
+	ExitCode int    `json:"exitCode"`
+	ErrMsg   string `json:"errMsg"`
+	Running  bool   `json:"running"`
 }
 
 func NewHub() *Hub {

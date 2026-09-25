@@ -63,7 +63,7 @@ onMounted(() => {
     const compact = (full.match(/\d{1,2}:\d{2}:\d{2}/) || [full])[0];
     time.value = window.matchMedia('(max-width: 640px)').matches ? compact : full;
   });
-  Events.On('session:output', (e) => console.log('OUT', e.data.Text))
+  Events.On('session:output', (e) => console.log('OUT', e.data.text))
   Events.On('session:exited', (e) => console.log('EXIT', e.data))
   // Wire up data-wml-openURL links (logos + footer "Docs" link).
   WML.Reload();

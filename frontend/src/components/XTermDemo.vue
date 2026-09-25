@@ -43,7 +43,7 @@ onMounted(() => {
   termInstance.value = term
   Events.On('session:output', (e) => {
     console.log('Session output:', e)
-    term.write(e.data.Text as string)
+    term.write(e.data.text as string)
   })
 
   Events.On('session:exited', (e) => {

@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,11 @@ type DataStore struct {
 	AutoStart bool     `json:"autoStart"`
 }
 
+type Settings struct {
+	Language string `json:"language"`
+	Theme    string `json:"theme"`
+}
+
 const (
 	// -rw-r--r--, 普通文件默认（配置、JSON、日志、数据文件）
 	permFile os.FileMode = 0o644
@@ -40,17 +46,19 @@ var (
 )
 
 type Store struct {
-	mu           sync.Mutex
-	dataFilePath string
-	dataList     map[string]DataStore
+	mu               sync.Mutex
+	dataFilePath     string
+	settingsFilePath string
+	dataList         map[string]DataStore
 }
 
 // GetStore will return a global Store instance
 func GetStore() (*Store, error) {
 	once.Do(func() {
 		s := &Store{
-			dataFilePath: loadDataFilePath(),
-			dataList:     make(map[string]DataStore),
+			dataFilePath:     loadDataFilePath(),
+			settingsFilePath: loadSettingsFilePath(),
+			dataList:         make(map[string]DataStore),
 		}
 		if err := s.load(); err != nil {
 			loadErr = err
@@ -111,6 +119,14 @@ func (s *Store) writeLocked(data map[string]DataStore) error {
 	return os.WriteFile(s.dataFilePath, raw, permFile)
 }
 
+func (s *Store) writeSettingsLocked(settings Settings) error {
+	raw, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.settingsFilePath, raw, permFile)
+}
+
 func loadDataFilePath() string {
 	if dir := os.Getenv("GO_TERMINAL_HUB_DIR"); dir != "" {
 		return filepath.Join(dir, "data.json")
@@ -119,6 +135,16 @@ func loadDataFilePath() string {
 		return filepath.Join(home, ".go-terminal-hub", "data.json")
 	}
 	return filepath.Join(".go-terminal-hub", "data.json")
+}
+
+func loadSettingsFilePath() string {
+	if dir := os.Getenv("GO_TERMINAL_HUB_DIR"); dir != "" {
+		return filepath.Join(dir, "settings.json")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".go-terminal-hub", "settings.json")
+	}
+	return filepath.Join(".go-terminal-hub", "settings.json")
 }
 
 func (s *Store) Add(data DataStore) error {
@@ -174,4 +200,41 @@ func (s *Store) List() []DataStore {
 		return list[i].ID > list[j].ID
 	})
 	return list
+}
+
+func (s *Store) GetSettings() Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings := Settings{
+		Language: "en",
+		Theme:    "light",
+	}
+	if err := os.MkdirAll(filepath.Dir(s.settingsFilePath), permDir); err != nil {
+		slog.Error("Failed to create directory for settings file", "err", err)
+		return settings
+	}
+	raw, err := os.ReadFile(s.settingsFilePath)
+	if err != nil {
+		slog.Error("Failed to read settings file", "err", err)
+		return settings
+	}
+	if len(raw) == 0 {
+		// set default settings to file
+		if err := s.writeSettingsLocked(settings); err != nil {
+			slog.Error("Failed to write default settings to file", "err", err)
+		}
+	}
+
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		slog.Error("Failed to unmarshal settings", "err", err)
+		return settings
+	}
+
+	return settings
+}
+
+func (s *Store) UpdateSettings(settings Settings) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writeSettingsLocked(settings)
 }

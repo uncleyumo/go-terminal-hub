@@ -26,8 +26,8 @@ type Entry struct {
 }
 
 type Command struct {
-	Path    string // 要启动的 exe
-	CmdLine string // 完整命令行
+	Path    string `json:"path"`    // 要启动的 exe
+	CmdLine string `json:"cmdLine"` // 完整命令行
 }
 
 // BuildCommand 把 Entry 翻译成一条完整命令行。
@@ -105,18 +105,18 @@ func BuildEntry(store store.DataStore) Entry {
 // 这里没有 Kind、没有 Mode：Kind 是拼命令行时才用的中间物；
 // Mode 决定用哪个 Executor 实现，是上层选实现的事，不是 Executor 的输入。
 type LaunchSpec struct {
-	Path    string   // 要启动的 exe
-	Command string   // 完整命令行
-	WorkDir string   // 空 = 当前目录
-	Env     []string // KEY=VALUE；nil = 继承当前进程
-	Cols    uint16   // 初始列数；0 = 用默认 80
-	Rows    uint16   // 初始行数；0 = 用默认 25
+	Path    string   `json:"path"`    // 要启动的 exe
+	Command string   `json:"command"` // 完整命令行
+	WorkDir string   `json:"workDir"` // 空 = 当前目录
+	Env     []string `json:"env"`     // KEY=VALUE；nil = 继承当前进程
+	Cols    uint16   `json:"cols"`    // 初始列数；0 = 用默认 80
+	Rows    uint16   `json:"rows"`    // 初始行数；0 = 用默认 25
 }
 
 // ExitResult 是会话结束的最终结果。
 type ExitResult struct {
-	Code int   // 退出码
-	Err  error // 非正常结束的原因；正常退出为 nil
+	Code int   `json:"code"` // 退出码
+	Err  error `json:"err"`  // 非正常结束的原因；正常退出为 nil
 }
 
 // Executor 是一个执行后端。
