@@ -10,9 +10,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
-	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
-	"github.com/uncleyumo/go-terminal-hub/internal/exec/session"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -51,6 +48,7 @@ func main() {
 		Description: "A demo of using raw HTML & CSS",
 		Services: []application.Service{
 			application.NewService(&GreetService{}),
+			application.NewService(&XtermDemoService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -63,7 +61,7 @@ func main() {
 	// Create a new window with the necessary options.
 	// 'Title' is the title of the window.
 	// 'Mac' options tailor the window when running on macOS.
-	// 'BackgroundColour' is the background colour of the window.
+	// 'BackgroundColour' is the background color of the window.
 	// 'URL' is the URL that will be loaded into the webview.
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Window 1",
@@ -75,7 +73,7 @@ func main() {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		BackgroundColour: application.NewRGB(6, 7, 15),
+		BackgroundColour: application.NewRGB(255, 255, 255),
 		URL:              "/",
 	})
 
@@ -86,30 +84,6 @@ func main() {
 			now := time.Now().Format(time.RFC1123)
 			app.Event.Emit("time", now)
 			time.Sleep(time.Second)
-		}
-	}()
-
-	go func() {
-		sink := NewBatchingSink(&emitSink{app, "demo"})
-		s := session.NewSession("demo", &conpty.ConPTYExecutor{}, sink)
-		command, err := executor.BuildCommand(
-			executor.Entry{
-				Kind:   "bat",
-				Target: "E:\\Dev_work\\Go_Dev\\go_projects\\go-terminal-hub\\test\\demo\\test.bat",
-			})
-		if err != nil {
-			return
-		}
-		err = s.Start(executor.LaunchSpec{
-			Path:    command.Path,
-			Command: command.CmdLine,
-			WorkDir: "",
-			Env:     nil,
-			Cols:    80,
-			Rows:    25,
-		})
-		if err != nil {
-			return
 		}
 	}()
 

@@ -1,0 +1,15 @@
+/* 宽高把 padding/border 算进去。不算进去的话，写了 width:100% 再加 padding 就会撑破父元素 */
+* {
+    box-sizing: border-box;
+}
+
+/* 盖掉浏览器默认给 body 的 8px 外边距；height:100% 让后代能用百分比高度 */
+html, body {
+    margin: 0;
+    height: 100%;
+}
+
+/* #app 是 Vue 的挂载点，让它自己不生成盒子，它的子元素直接参与 body 的布局 */
+#app {
+    display: contents;
+}
