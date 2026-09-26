@@ -58,8 +58,8 @@ func (s *StoreService) UpdateSession(id string, d store.DataStore) (string, erro
 }
 
 func (s *StoreService) DeleteSession(id string) error {
-	err := hub.GetHub().Remove(id)
-	if err != nil {
+	h := hub.GetHub()
+	if err := h.Remove(id); err != nil {
 		return errors.Errorf("remove session from hub error: %v", err)
 	}
 	useStore, err := store.GetStore()

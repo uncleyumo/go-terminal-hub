@@ -214,7 +214,8 @@ func (h *Hub) Remove(id string) error {
 	defer h.mu.Unlock()
 
 	if _, ok := h.records[id]; !ok {
-		return errors.New("record not found for id: " + id)
+		slog.Debug("record not found for id when removing: " + id)
+		return nil
 	}
 
 	// check if the session is done
