@@ -30,6 +30,9 @@ type testSink struct {
 	exited chan executor.ExitResult
 }
 
+func (s *testSink) OnStarted(id string) {
+}
+
 func (s *testSink) OnOutput(chunk []byte) {
 	s.mu.Lock()
 	s.buf = append(s.buf, chunk...)
@@ -51,8 +54,10 @@ func TestListRecordStatusAfterCleanExit(t *testing.T) {
 	if err := storeInst.UpdateDataJson(nil); err != nil {
 		t.Fatal(err)
 	}
-	// Add 会自己生成 UUIDv7 当 ID，所以从 List 里取真实 ID
+	// Add 不生成 ID，ID 由调用方填（service 层的 CreateSession 才生成 UUIDv7）
+	id := "01930000-0000-7000-8000-000000000001"
 	if err := storeInst.Add(store.DataStore{
+		ID:     id,
 		Name:   "clean exit",
 		Kind:   "shell",
 		Target: "echo hi",
@@ -60,11 +65,6 @@ func TestListRecordStatusAfterCleanExit(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := storeInst.List()
-	if len(list) != 1 {
-		t.Fatalf("store 里应该有 1 条，实际 %d", len(list))
-	}
-	id := list[0].ID
 
 	sink := &testSink{exited: make(chan executor.ExitResult, 1)}
 	h := NewHub()

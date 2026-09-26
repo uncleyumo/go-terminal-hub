@@ -1,4 +1,4 @@
-package main
+package sink
 
 import (
 	"sync"
@@ -53,4 +53,10 @@ func (b *BatchingSink) OnProcessExited(res executor.ExitResult) {
 	b.next.OnProcessExited(res)
 	b.mu.Unlock()
 	close(b.quit)
+}
+
+func (b *BatchingSink) OnStarted(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.next.OnStarted(id)
 }

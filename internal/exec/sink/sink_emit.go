@@ -1,4 +1,4 @@
-package main
+package sink
 
 import (
 	"log/slog"
@@ -7,9 +7,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-type emitSink struct {
-	app *application.App
-	id  string // which session this sink belongs to
+type EmitSink struct {
+	App *application.App
+	Id  string // which session this sink belongs to
 }
 
 type outputPayload struct {
@@ -23,28 +23,33 @@ type exitPayload struct {
 	ErrMsg string `json:"errMsg"`
 }
 
-func (e *emitSink) OnOutput(chunk []byte) {
+func (e *EmitSink) OnOutput(chunk []byte) {
 	slog.Debug("process output", "text", string(chunk))
-	e.app.Event.Emit("session:output", outputPayload{
-		ID:   e.id,
+	e.App.Event.Emit("session:output", outputPayload{
+		ID:   e.Id,
 		Text: string(chunk),
 	})
 }
 
-func (e *emitSink) OnProcessExited(res executor.ExitResult) {
+func (e *EmitSink) OnProcessExited(res executor.ExitResult) {
 	if res.Err != nil {
 		slog.Error("process exited with error", "err", res.Err)
-		e.app.Event.Emit("session:exited", exitPayload{
-			ID:     e.id,
+		e.App.Event.Emit("session:exited", exitPayload{
+			ID:     e.Id,
 			Code:   res.Code,
 			ErrMsg: res.Err.Error(),
 		})
 		return
 	}
 	slog.Info("process exited", "code", res.Code)
-	e.app.Event.Emit("session:exited", exitPayload{
-		ID:     e.id,
+	e.App.Event.Emit("session:exited", exitPayload{
+		ID:     e.Id,
 		Code:   res.Code,
 		ErrMsg: "",
 	})
+}
+
+func (e *EmitSink) OnStarted(id string) {
+	slog.Debug("process started")
+	e.App.Event.Emit("session:started", id)
 }

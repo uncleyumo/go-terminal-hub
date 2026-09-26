@@ -8,6 +8,7 @@ import (
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/session"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -26,8 +27,11 @@ func (x *XtermDemoService) StartSession() error {
 	}
 
 	app := application.Get()
-	sink := NewBatchingSink(&emitSink{app, "demo"})
-	s := session.NewSession("demo", &conpty.ConPTYExecutor{}, sink)
+	batchSink := sink.NewBatchingSink(&sink.EmitSink{
+		App: app,
+		Id:  "demo",
+	})
+	s := session.NewSession("demo", &conpty.ConPTYExecutor{}, batchSink)
 	command, err := executor.BuildCommand(
 		executor.Entry{
 			Kind:   "bat",

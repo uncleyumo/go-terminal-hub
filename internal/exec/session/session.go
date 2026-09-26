@@ -10,6 +10,7 @@ import (
 type Sink interface {
 	OnOutput(chunk []byte)
 	OnProcessExited(res executor.ExitResult)
+	OnStarted(id string)
 }
 
 type Session struct {
@@ -33,6 +34,7 @@ func (s *Session) Start(spec executor.LaunchSpec) error {
 	}
 	go s.drainLoop()
 	go s.reapLoop()
+	s.sink.OnStarted(s.id)
 	return nil
 }
 

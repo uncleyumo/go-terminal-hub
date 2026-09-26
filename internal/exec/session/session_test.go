@@ -13,13 +13,21 @@ import (
 
 // fakeSink 是 Sink 的测试替身：Session 递出来什么，就原样记下来。
 type fakeSink struct {
-	mu       sync.Mutex
-	out      []byte
-	exitedCh chan executor.ExitResult
+	mu        sync.Mutex
+	out       []byte
+	exitedCh  chan executor.ExitResult
+	startedCh chan string
+}
+
+func (f *fakeSink) OnStarted(id string) {
+	f.startedCh <- id
 }
 
 func newFakeSink() *fakeSink {
-	return &fakeSink{exitedCh: make(chan executor.ExitResult, 1)}
+	return &fakeSink{
+		exitedCh:  make(chan executor.ExitResult, 1),
+		startedCh: make(chan string, 1),
+	}
 }
 
 func (f *fakeSink) OnOutput(chunk []byte) {

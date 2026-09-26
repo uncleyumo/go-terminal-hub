@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-
-	"github.com/google/uuid"
 )
 
 type DataStore struct {
@@ -57,7 +55,7 @@ func GetStore() (*Store, error) {
 	once.Do(func() {
 		s := &Store{
 			dataFilePath:     loadDataFilePath(),
-			settingsFilePath: loadSettingsFilePath(),
+			settingsFilePath: loadSettingsPath(),
 			dataList:         make(map[string]DataStore),
 		}
 		if err := s.load(); err != nil {
@@ -80,7 +78,7 @@ func (s *Store) load() error {
 
 	raw, err := os.ReadFile(s.dataFilePath)
 	if errors.Is(err, os.ErrNotExist) {
-		return s.writeLocked(s.dataList)
+		return s.writeDataFileLocked(s.dataList)
 	}
 	if err != nil {
 		return err
@@ -108,10 +106,10 @@ func (s *Store) UpdateDataJson(dataList map[string]DataStore) error {
 	}
 
 	s.dataList = dataList
-	return s.writeLocked(dataList)
+	return s.writeDataFileLocked(dataList)
 }
 
-func (s *Store) writeLocked(data map[string]DataStore) error {
+func (s *Store) writeDataFileLocked(data map[string]DataStore) error {
 	raw, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
@@ -137,7 +135,7 @@ func loadDataFilePath() string {
 	return filepath.Join(".go-terminal-hub", "data.json")
 }
 
-func loadSettingsFilePath() string {
+func loadSettingsPath() string {
 	if dir := os.Getenv("GO_TERMINAL_HUB_DIR"); dir != "" {
 		return filepath.Join(dir, "settings.json")
 	}
@@ -151,17 +149,16 @@ func (s *Store) Add(data DataStore) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	uuid7, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	data.ID = uuid7.String()
-
 	if s.dataList == nil {
 		s.dataList = make(map[string]DataStore)
 	}
-	s.dataList[uuid7.String()] = data
-	return s.writeLocked(s.dataList)
+
+	if data.ID == "" {
+		return errors.New("data ID is empty")
+	}
+
+	s.dataList[data.ID] = data
+	return s.writeDataFileLocked(s.dataList)
 }
 
 func (s *Store) Remove(id string) error {
@@ -172,7 +169,26 @@ func (s *Store) Remove(id string) error {
 		return nil
 	}
 	delete(s.dataList, id)
-	return s.writeLocked(s.dataList)
+	return s.writeDataFileLocked(s.dataList)
+}
+
+// Update will update the data store with the given id and data,
+// but you should restart the session to apply the changes.
+func (s *Store) Update(id string, data DataStore) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.dataList == nil {
+		return errors.New("data list is nil")
+	}
+
+	if _, ok := s.dataList[id]; !ok {
+		return errors.New("data not found")
+	}
+
+	data.ID = id
+	s.dataList[id] = data
+	return s.writeDataFileLocked(s.dataList)
 }
 
 func (s *Store) GetOne(id string) (DataStore, bool) {

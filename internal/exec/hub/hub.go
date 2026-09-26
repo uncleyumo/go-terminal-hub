@@ -10,7 +10,9 @@ import (
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/session"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type Record struct {
@@ -28,6 +30,18 @@ type RecordStatus struct {
 	ExitCode int    `json:"exitCode"`
 	ErrMsg   string `json:"errMsg"`
 	Running  bool   `json:"running"`
+}
+
+var (
+	once   sync.Once
+	global *Hub
+)
+
+func GetHub() *Hub {
+	once.Do(func() {
+		global = NewHub()
+	})
+	return global
 }
 
 func NewHub() *Hub {
@@ -55,7 +69,7 @@ func (h *Hub) Start(id string, sink session.Sink) error {
 	}
 	dataStore, ok := storeInstance.GetOne(id)
 	if !ok {
-		return errors.New("data store not found for id: " + id)
+		return errors.New("data store not found for id when starting session: " + id)
 	}
 	entry := executor.BuildEntry(dataStore)
 	var s *session.Session
@@ -77,8 +91,8 @@ func (h *Hub) Start(id string, sink session.Sink) error {
 			return err
 		}
 	case "log":
-		slog.Error("log mode is not supported yet")
-		return errors.New("log mode is not supported yet")
+		slog.Error("log mode is not supported yet when starting session")
+		return errors.New("log mode is not supported yet when starting session")
 	default:
 		return errors.New("unsupported mode: " + entry.Mode)
 	}
@@ -87,6 +101,59 @@ func (h *Hub) Start(id string, sink session.Sink) error {
 		sess:  s,
 	}
 	return nil
+}
+
+func (h *Hub) StartSession(id string) error {
+	app := application.Get()
+	batchSink := sink.NewBatchingSink(&sink.EmitSink{
+		App: app,
+		Id:  id,
+	})
+	return h.Start(id, batchSink)
+}
+
+func (h *Hub) StopSession(id string) error {
+	h.mu.Lock()
+
+	record, ok := h.records[id]
+	if !ok {
+		h.mu.Unlock()
+		return errors.New("record not found for id when stopping: " + id)
+	}
+	if result, done := record.sess.Result(); done == true {
+		h.mu.Unlock()
+		return fmt.Errorf("session is already done with result when stopping: %v", result)
+	}
+	h.mu.Unlock()
+	record.sess.Stop()
+	return nil
+}
+
+func (h *Hub) RestartSession(id string) error {
+	h.mu.Lock()
+
+	record, ok := h.records[id]
+	if !ok {
+		h.mu.Unlock()
+		return errors.New("record not found for id when restarting: " + id)
+	}
+
+	if result, done := record.sess.Result(); done != true {
+		h.mu.Unlock()
+		return fmt.Errorf("you can only restart a session that is done: %v", result)
+	}
+
+	record.sess.Stop()
+	h.mu.Unlock()
+	return h.StartSession(id)
+}
+
+func (h *Hub) WriteSession(id string, data string) (int, error) {
+	return h.Write(id, []byte(data))
+}
+
+func (h *Hub) ResizeSession(id string, cols, rows uint16) error {
+	return h.Resize(id, cols, rows)
 }
 
 func (h *Hub) Write(id string, b []byte) (int, error) {

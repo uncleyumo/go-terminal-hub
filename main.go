@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -26,6 +27,9 @@ func init() {
 	// This is not required, but the binding generator will pick up registered events
 	// and provide a strongly typed JS/TS API for them.
 	application.RegisterEvent[string]("time")
+	application.RegisterEvent[[]byte]("session:output")
+	application.RegisterEvent[executor.ExitResult]("session:exited")
+	application.RegisterEvent[string]("session:started")
 }
 
 // main function serves as the application's entry point. It initializes the application, creates a window,
@@ -49,6 +53,8 @@ func main() {
 		Services: []application.Service{
 			application.NewService(&GreetService{}),
 			application.NewService(&XtermDemoService{}),
+			application.NewService(&StoreService{}),
+			application.NewService(&HubService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
