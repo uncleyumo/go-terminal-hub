@@ -12,6 +12,7 @@ import (
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -55,6 +56,7 @@ func main() {
 			application.NewService(&XtermDemoService{}),
 			application.NewService(&StoreService{}),
 			application.NewService(&HubService{}),
+			application.NewService(&AppService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -69,7 +71,7 @@ func main() {
 	// 'Mac' options tailor the window when running on macOS.
 	// 'BackgroundColour' is the background color of the window.
 	// 'URL' is the URL that will be loaded into the webview.
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Window 1",
 		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
 		Width:  1000,
@@ -92,6 +94,18 @@ func main() {
 			time.Sleep(time.Second)
 		}
 	}()
+
+	tray := app.SystemTray.New()
+	tray.SetTooltip("go-terminal-hub")
+	tray.AttachWindow(window)
+
+	window.RegisterHook(
+		events.Common.WindowClosing,
+		func(e *application.WindowEvent) {
+			window.Hide()
+			e.Cancel()
+		},
+	)
 
 	// Run the application. This blocks until the application has been exited.
 	err := app.Run()
