@@ -29,6 +29,29 @@ tasks:
     cmds:
       - task: "{{.GOOS}}:package"
 
+  dist:
+    summary: Builds a distributable binary whose filename carries its target platform
+    # 产物落在 dist/，文件名形如 go-terminal-hub_windows_amd64.exe。
+    # 换平台：wails3 task dist GOOS=linux ARCH=arm64
+    #
+    # 为什么是「先构建再拷贝」而不是让 go build 直接输出到 dist/：
+    # BIN_DIR / APP_NAME 是全局变量，从这里 handover 给内层 build:native 不生效，
+    # --dry 实测它仍然写 bin/go-terminal-hub.exe。所以老实构建完再复制。
+    vars:
+      DIST_OS: '{{.GOOS | default OS}}'
+      DIST_ARCH: '{{.ARCH | default ARCH}}'
+      DIST_NAME: '{{.APP_NAME}}_{{.DIST_OS}}_{{.DIST_ARCH}}'
+    cmds:
+      - cmd: powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path dist | Out-Null"
+        platforms: [windows]
+      - cmd: mkdir -p dist
+        platforms: [linux, darwin]
+      - task: build
+      - cmd: powershell -NoProfile -Command "Copy-Item '{{.BIN_DIR}}/{{.APP_NAME}}.exe' 'dist/{{.DIST_NAME}}.exe' -Force"
+        platforms: [windows]
+      - cmd: cp "{{.BIN_DIR}}/{{.APP_NAME}}" "dist/{{.DIST_NAME}}"
+        platforms: [linux, darwin]
+
   run:
     summary: Runs the application
     cmds:

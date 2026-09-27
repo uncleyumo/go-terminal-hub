@@ -8,6 +8,15 @@
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
 
+# GitHub 语言统计：整个 build/ 都是 Wails v3 脚手架，不是本项目的代码。
+# 光 build/android 就带了约 100 KB 的 Java（WailsBridge、MainActivity 等），
+# 按字节数算会压过真正手写的 Go 源码。标记为 vendored 后不进语言统计。
+build/android linguist-vendored
+build/ios linguist-vendored
+build/darwin linguist-vendored
+build/linux linguist-vendored
+build/windows linguist-vendored
+
 # Binary assets: never touch.
 *.png binary
 *.jpg binary

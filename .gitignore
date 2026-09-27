@@ -1,5 +1,6 @@
 .task
 bin
+dist
 *.syso
 frontend/dist
 frontend/node_modules
