@@ -34,3 +34,8 @@ func (x *HubService) ResizeSession(id string, cols, rows uint16) error {
 	h := hub.GetHub()
 	return h.ResizeSession(id, cols, rows)
 }
+
+func (x *HubService) StopAllSessions() error {
+	h := hub.GetHub()
+	return h.StopAllSessions()
+}
