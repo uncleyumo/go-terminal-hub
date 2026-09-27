@@ -3,6 +3,7 @@ package conpty
 import (
 	"errors"
 	"log/slog"
+	"os"
 	"sync"
 	"syscall"
 
@@ -47,7 +48,8 @@ func (c *ConPTYExecutor) Start(spec executor.LaunchSpec) error {
 		slog.Debug("current directory", "dir", spec.WorkDir)
 	}
 	cmd.Dir = spec.WorkDir
-	cmd.Env = spec.Env
+	environ := os.Environ()
+	cmd.Env = append(environ, spec.Env...)
 	sysProcAttr := &syscall.SysProcAttr{
 		CmdLine: spec.Command,
 	}

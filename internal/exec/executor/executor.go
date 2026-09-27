@@ -17,7 +17,7 @@ type Entry struct {
 	Target    string   `json:"target"` // 脚本路径 或 可执行文件路径
 	Args      string   `json:"args"`   // 原始字符串，绝不 split
 	WorkDir   string   `json:"workDir"`
-	Env       []string `json:"env"`      // KEY=VALUE
+	Env       []string `json:"env"`      // KEY=VALUE；空 = 继承父进程环境，不 = 覆盖、添加指定变量值
 	Mode      string   `json:"mode"`     // terminal | log
 	Encoding  string   `json:"encoding"` // auto | utf8 | gbk，仅日志模式用
 	Cols      uint16   `json:"cols"`
@@ -108,7 +108,7 @@ type LaunchSpec struct {
 	Path    string   `json:"path"`    // 要启动的 exe
 	Command string   `json:"command"` // 完整命令行
 	WorkDir string   `json:"workDir"` // 空 = 当前目录
-	Env     []string `json:"env"`     // KEY=VALUE；nil = 继承当前进程
+	Env     []string `json:"env"`     // KEY=VALUE；空 = 继承父进程环境，不 = 覆盖、添加指定变量值
 	Cols    uint16   `json:"cols"`    // 初始列数；0 = 用默认 80
 	Rows    uint16   `json:"rows"`    // 初始行数；0 = 用默认 25
 }
