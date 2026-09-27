@@ -142,7 +142,14 @@ async function submit() {
 
 <template>
   <el-dialog v-model="visible" :title="title" width="560px" append-to-body>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="120px" label-position="left">
+    <el-form
+      ref="formRef"
+      class="form-body"
+      :model="form"
+      :rules="rules"
+      label-width="120px"
+      label-position="left"
+    >
       <el-form-item :label="t('form.name')" prop="name">
         <el-input v-model="form.name" :placeholder="t('form.namePlaceholder')" />
       </el-form-item>
@@ -212,6 +219,17 @@ async function submit() {
 </template>
 
 <style scoped>
+/*
+ * 表单竖着堆 11 项，窗口一矮就顶到底边（el-dialog 自己是 fixed 定位，不滚动）。
+ * 给表单体一个上限高度、超出就滚，弹框的标题和按钮永远在视口里。
+ * 上限用 vh 而不是写死 px —— 窗口越矮，能分给它的就越少。
+ */
+.form-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .encoding {
   width: 100px;
   margin-left: 12px;

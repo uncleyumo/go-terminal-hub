@@ -1,13 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElConfigProvider, ElMessage, ElMessageBox } from 'element-plus'
 import elementEn from 'element-plus/es/locale/lang/en'
 import elementZhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, RefreshRight, SwitchButton, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import SessionList from './components/SessionList.vue'
 import SessionForm from './components/SessionForm.vue'
-import { deleteSession, getSettings, listSessions, saveSettings, type SessionView } from './api'
+import TerminalPane from './components/TerminalPane.vue'
+import {
+  deleteSession,
+  getSettings,
+  listSessions,
+  onSessionExited,
+  onSessionOutput,
+  onSessionStarted,
+  quitApp,
+  restartSession,
+  saveSettings,
+  startSession,
+  stopAllSessions,
+  stopSession,
+  type SessionView,
+} from './api'
+import { clear as clearTerminal, disposeAll, write as writeTerminal } from './terminal/manager'
 import { normalizeLocale, setLocale, type AppLocale } from './i18n'
 
 const { t } = useI18n()
@@ -85,9 +101,96 @@ async function remove(session: SessionView) {
   }
 }
 
+// —— 启停 ——
+// 起新一轮之前先清屏：不然上一轮的输出和新一轮的混在一起，分不清哪句是哪次跑出来的。
+
+async function start(session: SessionView) {
+  clearTerminal(session.config.id)
+  try {
+    await startSession(session.config.id)
+  } catch (error) {
+    ElMessage.error(`${t('msg.startFailed')}: ${String(error)}`)
+  }
+  await load()
+}
+
+async function stop(session: SessionView) {
+  try {
+    await stopSession(session.config.id)
+  } catch (error) {
+    ElMessage.error(`${t('msg.stopFailed')}: ${String(error)}`)
+  }
+  await load()
+}
+
+async function restart(session: SessionView) {
+  clearTerminal(session.config.id)
+  try {
+    await restartSession(session.config.id)
+  } catch (error) {
+    ElMessage.error(`${t('msg.startFailed')}: ${String(error)}`)
+  }
+  await load()
+}
+
+// —— 退出（D27 / D28）——
+// 判断全在前端：还有在跑的就弹框问一句，没有就直接退。
+// 停会话由后端并发做完（Hub.StopAllSessions），前端只等它返回。
+async function quit() {
+  const running = sessions.value.filter((s) => s.running)
+
+  if (running.length > 0) {
+    const names = running.map((s) => s.config.name || s.config.id).join(', ')
+    try {
+      await ElMessageBox.confirm(
+        t('msg.quitRunning', { n: running.length, names }),
+        t('msg.quitTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('msg.stopAllAndQuit'),
+          cancelButtonText: t('action.cancel'),
+        },
+      )
+    } catch {
+      return // 取消 —— 什么都不做
+    }
+
+    try {
+      await stopAllSessions()
+    } catch (error) {
+      // 已知：会话恰好在这两步之间自己退出了，hub 会把它当成失败报回来。
+      // 那正是我们想要的结果，所以只记一笔，不拦住退出。
+      console.warn('stopAllSessions reported an error, quitting anyway:', error)
+    }
+  }
+
+  await quitApp()
+}
+
+// 订阅必须在任何启动动作之前 —— 事件不补发，订阅之前产生的输出收不到。
+let unsubscribers: Array<() => void> = []
+
 onMounted(async () => {
+  unsubscribers = [
+    onSessionOutput((payload) => writeTerminal(payload.id, payload.text)),
+    onSessionStarted(() => {
+      void load()
+    }),
+    onSessionExited((payload) => {
+      writeTerminal(payload.id, `\r\n${t('term.exited', { code: payload.code })}\r\n`)
+      if (payload.errMsg) writeTerminal(payload.id, `${payload.errMsg}\r\n`)
+      void load()
+    }),
+  ]
+
   await loadSettings()
   await load()
+})
+
+onBeforeUnmount(() => {
+  for (const off of unsubscribers) off()
+  unsubscribers = []
+  disposeAll()
 })
 </script>
 
@@ -109,6 +212,7 @@ onMounted(async () => {
         </el-select>
 
         <el-button :icon="Refresh" size="small" @click="load">{{ t('app.refresh') }}</el-button>
+        <el-button :icon="SwitchButton" size="small" @click="quit">{{ t('app.quit') }}</el-button>
       </el-header>
 
       <el-container class="main">
@@ -126,37 +230,75 @@ onMounted(async () => {
         <el-main class="detail">
           <div v-if="!selected" class="placeholder">{{ t('detail.empty') }}</div>
 
-          <div v-else class="info">
-            <div class="info-title">{{ selected.config.name }}</div>
-            <el-descriptions :column="1" border size="small">
-              <el-descriptions-item :label="t('detail.status')">
+          <div v-else class="pane-wrap">
+            <div class="toolbar">
+              <span class="info-title">{{ selected.config.name || selected.config.id }}</span>
+              <span class="status">
+                <span class="dot" :class="selected.running ? 'on' : 'off'"></span>
                 <span v-if="selected.running">{{ t('list.running') }}</span>
                 <span v-else-if="selected.status">
-                  {{ t('list.stopped') }} ·
-                  {{ t('list.exitCode', { code: selected.status.exitCode }) }}
+                  {{ t('list.stopped') }} · {{ t('list.exitCode', { code: selected.status.exitCode }) }}
                 </span>
                 <span v-else>{{ t('list.stopped') }}</span>
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('detail.kind')">{{ selected.config.kind }}</el-descriptions-item>
-              <el-descriptions-item :label="t('detail.target')">{{ selected.config.target }}</el-descriptions-item>
-              <el-descriptions-item :label="t('detail.args')">
-                {{ selected.config.args || t('detail.none') }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('detail.workDir')">
-                {{ selected.config.workDir || t('detail.none') }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('detail.mode')">
-                {{ selected.config.mode }} / {{ selected.config.encoding }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('detail.size')">
-                {{ selected.config.cols }} × {{ selected.config.rows }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('detail.autoStart')">
-                {{ selected.config.autoStart ? '✓' : '—' }}
-              </el-descriptions-item>
-            </el-descriptions>
+              </span>
 
-            <div class="placeholder box">{{ t('detail.placeholder') }}</div>
+              <div class="spacer"></div>
+
+              <el-button
+                type="primary"
+                size="small"
+                :icon="VideoPlay"
+                :disabled="selected.running"
+                @click="start(selected)"
+              >
+                {{ t('action.start') }}
+              </el-button>
+              <el-button
+                size="small"
+                :icon="VideoPause"
+                :disabled="!selected.running"
+                @click="stop(selected)"
+              >
+                {{ t('action.stop') }}
+              </el-button>
+              <el-button
+                size="small"
+                :icon="RefreshRight"
+                :disabled="selected.running"
+                @click="restart(selected)"
+              >
+                {{ t('action.restart') }}
+              </el-button>
+            </div>
+
+            <el-collapse class="config">
+              <el-collapse-item :title="t('detail.config')" name="config">
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('detail.kind')">{{ selected.config.kind }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.mode')">
+                    {{ selected.config.mode }} / {{ selected.config.encoding }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.target')" :span="2">
+                    {{ selected.config.target }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.args')" :span="2">
+                    {{ selected.config.args || t('detail.none') }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.workDir')" :span="2">
+                    {{ selected.config.workDir || t('detail.none') }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.size')">
+                    {{ selected.config.cols }} × {{ selected.config.rows }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('detail.autoStart')">
+                    {{ selected.config.autoStart ? '✓' : '—' }}
+                  </el-descriptions-item>
+                </el-descriptions>
+              </el-collapse-item>
+            </el-collapse>
+
+            <!-- key 换行时会重新挂载：manager 里旧实例留着，容器换到新的 host 上 -->
+            <TerminalPane :key="selected.config.id" :session-id="selected.config.id" />
           </div>
         </el-main>
       </el-container>
@@ -195,25 +337,74 @@ onMounted(async () => {
 }
 
 .detail {
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
 .placeholder {
+  padding: 16px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
-.placeholder.box {
-  margin-top: 16px;
-  padding: 32px;
-  text-align: center;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 4px;
+.pane-wrap {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color);
 }
 
 .info-title {
-  margin-bottom: 12px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot.on {
+  background: var(--el-color-success);
+}
+
+.dot.off {
+  background: var(--el-text-color-disabled);
+}
+
+/* 配置默认收起来 —— 主要看的是终端 */
+.config {
+  flex: none;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.config :deep(.el-collapse-item__header) {
+  height: 34px;
+  font-size: 12px;
+}
+
+.config :deep(.el-collapse-item__wrap) {
+  padding-bottom: 8px;
 }
 </style>

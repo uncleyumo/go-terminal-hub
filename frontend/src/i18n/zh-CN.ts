@@ -2,6 +2,7 @@ export default {
   app: {
     title: 'go-terminal-hub',
     refresh: '刷新',
+    quit: '退出',
     language: '语言',
     settings: '设置',
   },
@@ -27,7 +28,11 @@ export default {
     size: '尺寸',
     autoStart: '开机启动',
     status: '状态',
+    config: '配置',
     none: '（空）',
+  },
+  term: {
+    exited: '[进程已退出，退出码 {code}]',
   },
   form: {
     createTitle: '新建会话',
@@ -59,6 +64,9 @@ export default {
     cancel: '取消',
     edit: '编辑',
     remove: '删除',
+    start: '启动',
+    stop: '停止',
+    restart: '重启',
   },
   msg: {
     created: '会话已创建',
@@ -69,6 +77,11 @@ export default {
     settingFailed: '保存设置失败',
     removeConfirm: '删除这个会话？',
     removeRunning: '先停止再删除',
+    startFailed: '启动会话失败',
+    stopFailed: '停止会话失败',
+    quitTitle: '退出 go-terminal-hub',
+    quitRunning: '还有 {n} 个会话在跑：{names}。全部停掉并退出？',
+    stopAllAndQuit: '全停并退出',
   },
   kind: {
     bat: 'bat',

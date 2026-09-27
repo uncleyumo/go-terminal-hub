@@ -2,6 +2,7 @@ export default {
   app: {
     title: 'go-terminal-hub',
     refresh: 'Refresh',
+    quit: 'Quit',
     language: 'Language',
     settings: 'Settings',
   },
@@ -27,7 +28,11 @@ export default {
     size: 'Size',
     autoStart: 'Start on launch',
     status: 'Status',
+    config: 'Configuration',
     none: '(empty)',
+  },
+  term: {
+    exited: '[process exited, code {code}]',
   },
   form: {
     createTitle: 'New session',
@@ -59,6 +64,9 @@ export default {
     cancel: 'Cancel',
     edit: 'Edit',
     remove: 'Delete',
+    start: 'Start',
+    stop: 'Stop',
+    restart: 'Restart',
   },
   msg: {
     created: 'Session created',
@@ -69,6 +77,11 @@ export default {
     settingFailed: 'Failed to save settings',
     removeConfirm: 'Delete this session?',
     removeRunning: 'Stop it before deleting',
+    startFailed: 'Failed to start session',
+    stopFailed: 'Failed to stop session',
+    quitTitle: 'Quit go-terminal-hub',
+    quitRunning: '{n} session(s) still running: {names}. Stop them all and quit?',
+    stopAllAndQuit: 'Stop all and quit',
   },
   kind: {
     bat: 'bat',
