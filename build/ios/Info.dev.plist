@@ -1,61 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>go-terminal-hub.exe</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.example.goterminalhub.dev</string>
-    <key>CFBundleName</key>
-    <string>My Product (Dev)</string>
-    <key>CFBundleDisplayName</key>
-    <string>My Product (Dev)</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0-dev</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.0</string>
-    <key>LSRequiresIPhoneOS</key>
-    <true/>
-    <key>MinimumOSVersion</key>
-    <string>15.0</string>
-    <key>UILaunchStoryboardName</key>
-    <string>LaunchScreen</string>
-    <key>UIRequiredDeviceCapabilities</key>
-    <array>
-        <string>arm64</string>
-    </array>
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-    <key>UISupportedInterfaceOrientations~ipad</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationPortraitUpsideDown</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
-    <!-- Development mode enabled -->
-    <key>WailsDevelopmentMode</key>
-    <true/>
-    
-    <key>NSHumanReadableCopyright</key>
-    <string>© 2026, My Company</string>
-    
-    
-    <key>CFBundleGetInfoString</key>
-    <string>This is a comment</string>
-    
-</dict>
+	<dict>
+		<key>CFBundleDisplayName</key>
+		<string>go-terminal-hub (Dev)</string>
+		<key>CFBundleExecutable</key>
+		<string>go-terminal-hub</string>
+		<key>CFBundleGetInfoString</key>
+		<string>Terminal session manager for Windows</string>
+		<key>CFBundleIdentifier</key>
+		<string>com.uncleyumo.goterminalhub.dev</string>
+		<key>CFBundleName</key>
+		<string>go-terminal-hub (Dev)</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>0.0.2-dev</string>
+		<key>CFBundleVersion</key>
+		<string>0.0.2</string>
+		<key>LSRequiresIPhoneOS</key>
+		<true/>
+		<key>MinimumOSVersion</key>
+		<string>15.0</string>
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+			<key>NSAllowsLocalNetworking</key>
+			<true/>
+		</dict>
+		<key>NSHumanReadableCopyright</key>
+		<string>(c) 2026, uncleyumo</string>
+		<key>UILaunchStoryboardName</key>
+		<string>LaunchScreen</string>
+		<key>UIRequiredDeviceCapabilities</key>
+		<array>
+			<string>arm64</string>
+		</array>
+		<key>UISupportedInterfaceOrientations</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UISupportedInterfaceOrientations~ipad</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>WailsDevelopmentMode</key>
+		<true/>
+	</dict>
 </plist>
