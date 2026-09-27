@@ -5,9 +5,16 @@
 // @ts-ignore: Unused imports
 import type { Events } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as sink$0 from "../../../../uncleyumo/go-terminal-hub/internal/exec/sink/models.js";
+
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "session:exited": sink$0.ExitPayload;
+            "session:output": sink$0.OutputPayload;
+            "session:started": string;
             "time": string;
         }
     }

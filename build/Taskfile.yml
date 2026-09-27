@@ -213,7 +213,11 @@ tasks:
   frontend:dev:npm:
     dir: frontend
     cmds:
-      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+      # 直接调 vite，不套一层 `npm run`：npm 自己的启动开销在本机约 3.7 秒
+      # （2026-09-27 实测：`npm run dev` 到能响应要 6.6s，`node vite.js` 只要 2.9s）。
+      # 而应用等 dev server 的窗口只有 5 秒（`application_dev.go:25` 10 次 × 500ms），
+      # 超了就是 FATAL「unable to connect to frontend server」。
+      - node ./node_modules/vite/bin/vite.js --port {{.VITE_PORT}} --strictPort
 
   frontend:dev:yarn:
     dir: frontend

@@ -10,9 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "@wailsio/runtime": "latest",
+    "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "vue": "^3.2.45"
+    "element-plus": "^2.14.6",
+    "vue": "^3.2.45",
+    "vue-i18n": "^11.4.12"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",

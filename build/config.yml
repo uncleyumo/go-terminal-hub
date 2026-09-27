@@ -52,10 +52,14 @@ dev_mode:
       - "*.ts" # The frontend directory will be excluded entirely by the setting above.
     git_ignore: true
   executes:
-    - cmd: wails3 build DEV=true
-      type: blocking
+    # 前端先起（background 不阻塞），再 build（blocking），最后 run（primary）。
+    # 原顺序是 build → frontend → run，应用一起来就开始轮询 dev server，
+    # 而那时前端往往还没起完 → 5 秒窗口一过就是 FATAL。
+    # 换到最前面，前端白得整个 build 的时间（go build + syso，通常好几秒）做余量。
     - cmd: wails3 task common:dev:frontend
       type: background
+    - cmd: wails3 build DEV=true
+      type: blocking
     - cmd: wails3 task run
       type: primary
 
