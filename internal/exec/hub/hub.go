@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/conpty"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
@@ -262,4 +263,33 @@ func (h *Hub) ListRecordStatus() []RecordStatus {
 		return result[i].ID > result[j].ID
 	})
 	return result
+}
+
+func (h *Hub) StopAllSessions() error {
+	status := h.ListRecordStatus()
+	runningCount := 0
+	for _, record := range status {
+		if record.Running {
+			runningCount++
+		}
+	}
+	all := make(chan any, runningCount)
+	for _, record := range status {
+		if record.Running {
+			go func(id string) {
+				_ = h.Stop(id)
+				select {
+				case all <- 1:
+					slog.Debug("session stopped", "id", id)
+				case <-time.After(3 * time.Second):
+					slog.Warn("session took too long to stop", "id", id)
+				}
+			}(record.ID)
+		}
+	}
+	for i := 0; i < runningCount; i++ {
+		<-all
+	}
+	slog.Debug("all sessions stopped")
+	return nil
 }
