@@ -10,7 +10,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -27,8 +27,8 @@ func init() {
 	// This is not required, but the binding generator will pick up registered events
 	// and provide a strongly typed JS/TS API for them.
 	application.RegisterEvent[string]("time")
-	application.RegisterEvent[[]byte]("session:output")
-	application.RegisterEvent[executor.ExitResult]("session:exited")
+	application.RegisterEvent[sink.OutputPayload]("session:output")
+	application.RegisterEvent[sink.ExitPayload]("session:exited")
 	application.RegisterEvent[string]("session:started")
 }
 
