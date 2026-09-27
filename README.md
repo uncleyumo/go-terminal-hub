@@ -1,59 +1,110 @@
-# Welcome to Your New Wails3 Project!
+# go-terminal-hub
 
-Congratulations on generating your Wails3 application! This README will guide you through the next steps to get your project up and running.
+**English** · [简体中文](README.zh-CN.md)
 
-## Getting Started
+A Windows desktop app that puts scattered scripts and CLI programs under one roof:
+start them, stop them, watch their output live, and type into them while they run.
 
-1. Navigate to your project directory in the terminal.
+> **Status: early development.** Built on Wails v3 `v3.0.0-beta.23`. The Wails v3 API
+> is still in beta, so upstream breaking changes are likely. Not production-ready.
 
-2. To run your application in development mode, use the following command:
+## Why
 
-   ```
-   wails3 dev
-   ```
+If you keep a drawer full of `.bat` files, you know the drill: a console window flashes
+open, you can't tell which one is still running, and closing the window doesn't stop the
+process.
 
-   This will start your application and enable hot-reloading for both frontend and backend changes.
+The need turns out to be a size larger than batch files. Anything that runs from a single
+command line — `.bat`, `.ps1`, `.exe`, a Python script, any CLI — should be manageable
+from one place. So this is not a batch-file manager; it is a general terminal session
+manager.
 
-3. To build your application for production, use:
+## Features
 
-   ```
-   wails3 build
-   ```
+- **A real PTY, not a pipe.** Sessions run behind a Windows ConPTY pseudo-console, so
+  interactive programs behave the way they do in a normal terminal.
+- **Live output** streamed into an [xterm.js](https://xtermjs.org/) pane, one per session.
+- **Start / stop** an individual session, or stop every session at once.
+- **System tray.** Closing the window hides it; the app and its sessions keep running.
+- **Persistence** of session definitions across restarts.
+- **Bilingual UI** — English and 简体中文.
+- **Single executable.** The frontend is embedded with `go:embed`, so runtime needs no
+  extra files.
 
-   This will create a production-ready executable in the `build` directory.
+## Requirements
 
-## Exploring Wails3 Features
+| | |
+|---|---|
+| OS | Windows 10 1809 (build 17763) or newer |
+| Go | 1.25 or newer |
+| Node.js | 18 or newer |
+| npm | 7 or newer |
+| Wails v3 CLI | `v3.0.0-beta.23` |
+| WebView2 Runtime | preinstalled on Windows 11; on Windows 10 install the Evergreen Runtime |
 
-Now that you have your project set up, it's time to explore the features that Wails3 offers:
+The Windows 10 1809 floor comes from **ConPTY**, not from Wails. There is no non-Windows
+build: `internal/exec/conpty` only contains a `_windows.go` file, because ConPTY is a
+Windows API.
 
-1. **Check out the examples**: The best way to learn is by example. Visit the `examples` directory in the `v3/examples` directory to see various sample applications.
+## Getting started
 
-2. **Run an example**: To run any of the examples, navigate to the example's directory and use:
+```bash
+git clone https://github.com/uncleyumo/go-terminal-hub.git
+cd go-terminal-hub
 
-   ```
-   go run .
-   ```
+wails3 dev
+```
 
-   Note: Some examples may be under development during the alpha phase.
+`wails3 dev` installs frontend dependencies on first run, starts Vite on port 9245,
+builds the Go side, and launches the app with hot reload for both halves.
 
-3. **Explore the documentation**: Visit the [Wails3 documentation](https://v3.wails.io/) for in-depth guides and API references.
+### Build
 
-4. **Join the community**: Have questions or want to share your progress? Join the [Wails Discord](https://discord.gg/JDdSxwjhGf) or visit the [Wails discussions on GitHub](https://github.com/wailsapp/wails/discussions).
+```bash
+wails3 build      # -> bin/go-terminal-hub.exe
+wails3 package    # installer, see build/windows
+```
 
-## Project Structure
+Builds are dispatched through [go-task](https://taskfile.dev/) via `wails3 task`, so
+individual steps can be run on their own:
 
-Take a moment to familiarize yourself with your project structure:
+```bash
+wails3 task common:build:frontend     # Vue + Vite build only
+wails3 task common:generate:bindings  # regenerate frontend/bindings from the Go services
+```
 
-- `frontend/`: Contains your frontend code (HTML, CSS, JavaScript/TypeScript)
-- `main.go`: The entry point of your Go backend
-- `app.go`: Define your application structure and methods here
-- `wails.json`: Configuration file for your Wails project
+## Project layout
 
-## Next Steps
+```
+main.go                  entry point: embeds frontend/dist, binds services, window, tray
+*_service.go             services exposed to the frontend
+internal/exec/
+  conpty/                Windows ConPTY wrapper
+  executor/              process launch and lifecycle
+  session/               one managed session
+  sink/                  turns session output into frontend events
+  hub/                   registry and orchestration of all sessions
+  store/                 session persistence
+frontend/                Vue 3 + TypeScript + Vite
+  src/components/        SessionList, SessionForm, TerminalPane, ...
+  src/terminal/          xterm.js instance management
+  src/i18n/              en, zh-CN
+  bindings/              generated TypeScript bindings for the Go services
+build/                   Wails v3 platform scaffold (Taskfiles, icons, packaging)
+```
 
-1. Modify the frontend in the `frontend/` directory to create your desired UI.
-2. Add backend functionality in `main.go`.
-3. Use `wails3 dev` to see your changes in real-time.
-4. When ready, build your application with `wails3 build`.
+## How it fits together
 
-Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
+```
+xterm.js  <-  Wails events  <-  sink  <-  session  <-  executor  <-  ConPTY
+```
+
+The frontend calls into `HubService` to start a session. The hub creates a `Session`,
+which drives an `Executor`, which owns the ConPTY pseudo-console. Everything read from
+the console goes to a `Sink`, which emits the `session:started`, `session:output` and
+`session:exited` events the frontend subscribes to. The terminal pane writes those
+payloads into xterm.js.
+
+## License
+
+[MIT](LICENSE)

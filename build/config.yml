@@ -5,12 +5,12 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "My Company" # The name of the company
-  productName: "My Product" # The name of the application
-  productIdentifier: "com.mycompany.myproduct" # The unique product identifier
-  description: "A program that does X" # The application description
-  copyright: "(c) 2025, My Company" # Copyright text
-  comments: "Some Product Comments" # Comments
+  companyName: "uncleyumo" # The name of the company
+  productName: "go-terminal-hub" # The name of the application
+  productIdentifier: "com.uncleyumo.goterminalhub" # The unique product identifier
+  description: "Manage scripts and CLI programs as terminal sessions from one window" # The application description
+  copyright: "(c) 2026, uncleyumo" # Copyright text
+  comments: "Terminal session manager for Windows" # Comments
   version: "0.0.1" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension
@@ -79,5 +79,5 @@ fileAssociations:
 #    mimeType: image/jpeg  # (optional)
 
 # Other data
-other:
-  - name: My Other Data
+# other:
+#  - name: My Other Data

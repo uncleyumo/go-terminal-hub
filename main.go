@@ -50,7 +50,7 @@ func main() {
 	// 'Mac' options tailor the application when running an macOS.
 	app := application.New(application.Options{
 		Name:        "go-terminal-hub",
-		Description: "A demo of using raw HTML & CSS",
+		Description: "Manage scripts and CLI programs as terminal sessions from one window",
 		Services: []application.Service{
 			application.NewService(&GreetService{}),
 			application.NewService(&XtermDemoService{}),
@@ -72,7 +72,7 @@ func main() {
 	// 'BackgroundColour' is the background color of the window.
 	// 'URL' is the URL that will be loaded into the webview.
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Window 1",
+		Title: "go-terminal-hub",
 		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
 		Width:  1000,
 		Height: 618,

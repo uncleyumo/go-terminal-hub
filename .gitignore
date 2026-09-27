@@ -16,3 +16,20 @@ tmp
 **/*.exe
 /task
 /wailsv3
+
+# Backup and editor leftovers
+*.bak
+*.bk
+*.orig
+*.log
+
+# Environment files
+.env
+.env.*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
