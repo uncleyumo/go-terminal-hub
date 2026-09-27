@@ -16,7 +16,6 @@ export default {
   },
   detail: {
     empty: 'Select a session on the left',
-    placeholder: 'The terminal will be mounted here (step 2)',
     name: 'Name',
     kind: 'Kind',
     target: 'Target',
@@ -54,7 +53,7 @@ export default {
     cols: 'Columns',
     rows: 'Rows',
     autoStart: 'Start on launch',
-    autoStartHint: 'Started by the frontend once it has subscribed to events',
+    autoStartHint: 'Start this session automatically when the app opens',
     nameRequired: 'Name is required',
     targetRequired: 'Target is required',
   },

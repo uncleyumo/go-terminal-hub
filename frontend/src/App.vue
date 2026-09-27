@@ -170,6 +170,21 @@ async function quit() {
 // 订阅必须在任何启动动作之前 —— 事件不补发，订阅之前产生的输出收不到。
 let unsubscribers: Array<() => void> = []
 
+// —— 开机自启 ——
+// 只能放在三个订阅之后：事件不补发，早于订阅启动的会话，它的输出前端一句都收不到。
+// 跳过已在跑的：开发时前端热重载会让 onMounted 再跑一次，那时会话还在内存里，
+// 重复启动会撞上 hub 的同 ID 检查报错。
+async function runAutoStart() {
+  const targets = sessions.value.filter((s) => s.config.autoStart && !s.running)
+  for (const session of targets) {
+    try {
+      await startSession(session.config.id)
+    } catch (error) {
+      ElMessage.error(`${t('msg.startFailed')}: ${String(error)}`)
+    }
+  }
+}
+
 onMounted(async () => {
   unsubscribers = [
     onSessionOutput((payload) => writeTerminal(payload.id, payload.text)),
@@ -185,6 +200,7 @@ onMounted(async () => {
 
   await loadSettings()
   await load()
+  await runAutoStart()
 })
 
 onBeforeUnmount(() => {

@@ -55,12 +55,17 @@ export function detach(id: string) {
   entries.get(id)?.container.remove()
 }
 
+// 没实例的行也要收：进程一起来就吐输出，而实例是按需创建的——
+// 用 entries.get(id)?. 的话，那些「没被选中过、也没自动启动过」的行，
+// 输出会在到达时被静默丢掉。
+// ensure() 只建实例、不 open()：内容先进 buffer，
+// 等这一行被选中、attach() 里 open() 之后，buffer 里的东西照常渲染出来。
 export function write(id: string, text: string) {
-  entries.get(id)?.term.write(text)
+  ensure(id).term.write(text)
 }
 
 // 新起一轮之前清屏，别让上一轮的输出和新一轮混在一起。
-// 注意只对已经建过实例的行有效；没选中过的行还没有实例，也就没有历史要清。
+// 没建过实例的行没有历史要清，这里不为它建实例。
 export function clear(id: string) {
   entries.get(id)?.term.reset()
 }
