@@ -16,14 +16,6 @@ onBeforeUnmount(() => detach(props.sessionId))
 </script>
 
 <template>
-  <div ref="host" class="pane"></div>
+  <!-- relative：manager 把 xterm 的容器绝对定位铺满这里（见 manager.ts 的说明） -->
+  <div ref="host" class="relative min-h-0 flex-1 overflow-hidden bg-term"></div>
 </template>
-
-<style scoped>
-.pane {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: #1e1e1e;
-}
-</style>

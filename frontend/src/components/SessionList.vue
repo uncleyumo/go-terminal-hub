@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Delete, Edit, Plus } from '@element-plus/icons-vue'
+import UButton from './ui/UButton.vue'
+import UIcon from './ui/UIcon.vue'
+import UTooltip from './ui/UTooltip.vue'
 import type { SessionView } from '../api'
 
-defineProps<{
+const props = defineProps<{
   sessions: SessionView[]
   selectedId: string | null
+  /** 顶栏搜索框传进来的过滤词，空串 = 不过滤 */
+  query: string
 }>()
 
 const emit = defineEmits<{
@@ -16,174 +21,126 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+// 名称、目标路径、类型都拿来匹配 —— 用户想找的往往是他记得的那条路径，不是记得名字。
+const filtered = computed(() => {
+  const q = props.query.trim().toLowerCase()
+  if (q === '') return props.sessions
+  return props.sessions.filter((s) =>
+    [s.config.name, s.config.target, s.config.kind, s.config.args]
+      .filter(Boolean)
+      .some((field) => String(field).toLowerCase().includes(q)),
+  )
+})
+
+function label(session: SessionView): string {
+  const name = session.config.name || session.config.id
+  // 状态不能只靠那颗点传达（读屏看不见颜色），所以进 aria-label
+  return session.running ? `${name} · ${t('list.running')}` : name
+}
 </script>
 
 <template>
-  <div class="session-list">
-    <div class="head">
-      <span class="title">{{ t('list.title') }}</span>
-      <span class="count">{{ sessions.length }}</span>
+  <div class="flex h-full min-h-0 flex-col bg-sunken">
+    <div class="flex flex-none items-center gap-2 px-3 py-2.5">
+      <span class="text-[11px] font-semibold tracking-wider text-ink-faint uppercase">
+        {{ t('list.title') }}
+      </span>
+      <span
+        class="rounded-full bg-line px-1.5 py-px text-[10px] leading-4 font-medium text-ink-dim tabular-nums"
+      >
+        {{ query.trim() ? `${filtered.length}/${sessions.length}` : sessions.length }}
+      </span>
+      <div class="flex-1"></div>
+      <UTooltip :content="t('list.create')">
+        <UButton variant="ghost" size="sm" square icon="plus" @click="emit('create')" />
+      </UTooltip>
     </div>
 
-    <el-scrollbar class="body">
-      <div v-if="sessions.length === 0" class="empty">{{ t('list.empty') }}</div>
-
-      <div
-        v-for="session in sessions"
-        :key="session.config.id"
-        class="item"
-        :class="{ active: session.config.id === selectedId }"
-        @click="emit('select', session.config.id)"
-      >
-        <span class="dot" :class="session.running ? 'on' : 'off'"></span>
-
-        <div class="text">
-          <div class="name">{{ session.config.name || session.config.id }}</div>
-          <div class="sub">
-            <span>{{ session.config.kind }}</span>
-            <span v-if="!session.running && session.status">
-              · {{ t('list.exitCode', { code: session.status.exitCode }) }}
-            </span>
-          </div>
-        </div>
-
-        <div class="ops" @click.stop>
-          <el-button link :icon="Edit" size="small" @click="emit('edit', session)" />
-          <!-- 运行中不给删（D23）：后端那句 session is still running 只是兜底 -->
-          <el-tooltip
-            :content="t('msg.removeRunning')"
-            :disabled="!session.running"
-            placement="top"
-          >
-            <span>
-              <el-button
-                link
-                type="danger"
-                :icon="Delete"
-                size="small"
-                :disabled="session.running"
-                @click="emit('remove', session)"
-              />
-            </span>
-          </el-tooltip>
-        </div>
+    <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div v-if="sessions.length === 0" class="px-2 py-8 text-center text-xs text-ink-faint">
+        {{ t('list.empty') }}
       </div>
-    </el-scrollbar>
+      <div v-else-if="filtered.length === 0" class="px-2 py-8 text-center text-xs text-ink-faint">
+        {{ t('list.noMatch', { q: query.trim() }) }}
+      </div>
 
-    <div class="foot">
-      <el-button :icon="Plus" class="full" @click="emit('create')">
-        {{ t('list.create') }}
-      </el-button>
+      <!-- 行用 div 而不是 button：里面还嵌着两个真按钮，button 套 button 是非法结构，
+           浏览器的 HTML 解析器会把内层那个提前关掉，点了没反应 -->
+      <div
+        v-for="session in filtered"
+        :key="session.config.id"
+        tabindex="0"
+        role="option"
+        :aria-selected="session.config.id === selectedId"
+        :aria-label="label(session)"
+        class="group mb-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-1.5 pl-2.5 text-left transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent"
+        :class="
+          session.config.id === selectedId
+            ? 'bg-accent-soft text-ink'
+            : 'text-ink-dim hover:bg-raised/60 hover:text-ink'
+        "
+        @click="emit('select', session.config.id)"
+        @keydown.enter="emit('select', session.config.id)"
+      >
+        <!-- 状态点：颜色之外还有 aria-label，不靠颜色单独传达信息 -->
+        <span
+          class="h-1.5 w-1.5 shrink-0 rounded-full transition-colors"
+          :class="session.running ? 'bg-pos' : 'bg-line-strong'"
+        />
+
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] leading-4.5 font-medium">
+            {{ session.config.name || session.config.id }}
+          </span>
+          <span class="mt-0.5 flex items-center gap-1 text-[10.5px] leading-4 text-ink-faint">
+            <span class="font-mono">{{ session.config.kind }}</span>
+            <template v-if="!session.running && session.status">
+              <span>·</span>
+              <span class="tabular-nums">
+                {{ t('list.exitCode', { code: session.status.exitCode }) }}
+              </span>
+            </template>
+          </span>
+        </span>
+
+        <!-- 操作按钮平时收起来，鼠标进这一行才出现；收起用 opacity 不占位，列表宽度不会跳 -->
+        <span
+          class="flex flex-none items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+          :class="session.config.id === selectedId && 'opacity-100'"
+          @click.stop
+        >
+          <UButton
+            variant="ghost"
+            size="sm"
+            square
+            icon="edit"
+            :aria-label="t('action.edit')"
+            @click="emit('edit', session)"
+          />
+          <!-- 运行中不给删（D23）：后端那句 session is still running 只是兜底 -->
+          <UTooltip v-if="session.running" :content="t('msg.removeRunning')">
+            <UButton
+              variant="ghost"
+              size="sm"
+              square
+              icon="trash"
+              disabled
+              :aria-label="t('action.remove')"
+            />
+          </UTooltip>
+          <UButton
+            v-else
+            variant="ghost"
+            size="sm"
+            square
+            icon="trash"
+            class="hover:text-neg"
+            :aria-label="t('action.remove')"
+            @click="emit('remove', session)"
+          />
+        </span>
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.session-list {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  border-right: 1px solid var(--el-border-color);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color);
-}
-
-.title {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.count {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.body {
-  flex: 1;
-  min-height: 0;
-}
-
-.empty {
-  padding: 16px 12px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-}
-
-.item:hover {
-  background: var(--el-fill-color-light);
-}
-
-.item.active {
-  background: var(--el-fill-color);
-  border-left-color: var(--el-color-primary);
-}
-
-.dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.dot.on {
-  background: var(--el-color-success);
-}
-
-.dot.off {
-  background: var(--el-text-color-disabled);
-}
-
-.text {
-  flex: 1;
-  min-width: 0;
-}
-
-.name {
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sub {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-}
-
-/* 操作按钮平时不占地方，鼠标移到这一行才出现 */
-.ops {
-  flex: none;
-  display: flex;
-  gap: 2px;
-  opacity: 0;
-}
-
-.item:hover .ops,
-.item.active .ops {
-  opacity: 1;
-}
-
-.foot {
-  padding: 8px;
-  border-top: 1px solid var(--el-border-color);
-}
-
-.full {
-  width: 100%;
-}
-</style>

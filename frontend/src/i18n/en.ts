@@ -5,19 +5,35 @@ export default {
     quit: 'Quit',
     language: 'Language',
     settings: 'Settings',
-    startOnBoot: 'Launch on login',
-    startOnBootHint: 'Start automatically when you sign in to Windows. The window stays in the tray.',
+    startOnBoot: 'Launch at startup',
+    // One short line only — the old two-line version pushed the bubble off the window edge
+    startOnBootHint: 'Start automatically when Windows starts up',
+    refreshHint: 'Re-read the session list and running state',
+    quitHint: 'Stop every session and quit',
+    search: 'Search sessions',
+    searchPlaceholder: 'Search sessions…',
+    searchClear: 'Clear search',
+  },
+  theme: {
+    label: 'Theme',
+    light: 'Light',
+    dark: 'Dark',
+    system: 'Match system',
   },
   list: {
     title: 'Sessions',
     empty: 'No sessions yet',
     create: 'New session',
+    noMatch: 'Nothing matches “{q}”',
     running: 'Running',
     stopped: 'Stopped',
     exitCode: 'exit {code}',
   },
   detail: {
     empty: 'Select a session on the left',
+    emptyTitle: 'No session selected',
+    emptyHint:
+      'A session is one program you want running — a .bat, a .ps1, an .exe, or an interactive shell. Add one, then start and stop it from here.',
     name: 'Name',
     kind: 'Kind',
     target: 'Target',
@@ -100,5 +116,6 @@ export default {
   mode: {
     terminal: 'terminal',
     log: 'log',
+    logUnavailable: 'not implemented yet',
   },
 }

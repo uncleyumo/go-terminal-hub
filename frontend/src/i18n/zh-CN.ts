@@ -5,19 +5,35 @@ export default {
     quit: '退出',
     language: '语言',
     settings: '设置',
-    startOnBoot: '登录时启动',
-    startOnBootHint: '登录 Windows 后自动启动，窗口收在托盘里',
+    startOnBoot: '开机自启',
+    // 只留一句：原来那句带「窗口收在托盘里」，气泡会顶出窗口右边缘
+    startOnBootHint: 'Windows 开机后自动启动',
+    refreshHint: '重新读取会话列表和运行状态',
+    quitHint: '停止所有会话并退出应用',
+    search: '搜索会话',
+    searchPlaceholder: '搜索会话…',
+    searchClear: '清空搜索',
+  },
+  theme: {
+    label: '主题',
+    light: '浅色',
+    dark: '深色',
+    system: '跟随系统',
   },
   list: {
     title: '会话',
     empty: '还没有会话',
     create: '新建会话',
+    noMatch: '没有匹配「{q}」的会话',
     running: '运行中',
     stopped: '已停止',
     exitCode: '退出 {code}',
   },
   detail: {
     empty: '从左边选一个会话',
+    emptyTitle: '还没有选中会话',
+    emptyHint:
+      '一个会话就是你想让它常驻运行的一个程序 —— .bat、.ps1、.exe 或者一个交互式命令行。新建一个，之后就能在这里启停。',
     name: '名称',
     kind: '类型',
     target: '目标',
@@ -100,5 +116,6 @@ export default {
   mode: {
     terminal: 'terminal',
     log: 'log',
+    logUnavailable: '还没做',
   },
 }

@@ -3,7 +3,7 @@
 // 为什么不直接建在组件里：选中另一行、或详情区被卸载时，组件里的 DOM 会跟着销毁，
 // 挂在它上面的 Terminal 实例也就没了，之前滚过的输出全丢。把实例留在这个模块里，
 // 容器只是个可插拔的壳，换回来还能看到原来的内容。
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { resizeSession, writeSession } from '../api'
 
@@ -17,14 +17,81 @@ interface Entry {
 
 const entries = new Map<string, Entry>()
 
+/*
+ * 终端配色**分主题**，但两个主题下都是深底 —— 读进程输出要的是输出自身的颜色
+ * 跳出来，浅底会把 ANSI 配色（尤其偏亮的黄/青）洗掉。
+ * 浅色主题下用一档**偏蓝的深炭灰**而不是死黑：贴着白底看，纯黑像一个挖空的洞，
+ * 这档颜色跟浅色主题的冷中性色系是一家人，看着是「一块终端」而不是「一片空白」。
+ */
+const PALETTES: Record<'light' | 'dark', ITheme> = {
+  dark: {
+    background: '#07090d',
+    foreground: '#d5dae6',
+    cursor: '#4c8dff',
+    cursorAccent: '#07090d',
+    selectionBackground: '#2c3346',
+    black: '#0a0c11',
+    red: '#f4695f',
+    green: '#3fb950',
+    yellow: '#d8a53a',
+    blue: '#4c8dff',
+    magenta: '#b48ef0',
+    cyan: '#4ec9c9',
+    white: '#d5dae6',
+    brightBlack: '#7d879b',
+    brightWhite: '#e8ebf2',
+  },
+  light: {
+    // 浅色主题下终端也是浅色。底色跟 :root[data-theme='light'] 的 --c-sunken
+    // 取同一个值（#edeff3），终端就跟窗口是一块，不是浮在浅色界面里的一块黑。
+    // ANSI 十六色按浅底重新挑过：亮色在浅底上看不见，所以 yellow/white 压暗、
+    // brightBlack 提亮，两头都要顾。2026-09-28 学习者指出原来那套「死黑」不能要。
+    background: '#edeff3',
+    foreground: '#2b313d',
+    cursor: '#2159c9',
+    cursorAccent: '#edeff3',
+    selectionBackground: '#c3d3f0',
+    black: '#2b313d',
+    red: '#b23c30',
+    green: '#1c7a3f',
+    yellow: '#8a6100',
+    blue: '#2159c9',
+    magenta: '#7436c8',
+    cyan: '#0b6f85',
+    white: '#5b6474',
+    brightBlack: '#8b93a3',
+    brightWhite: '#3a4150',
+  },
+}
+
+/** 跟着 <html data-theme> 走；没写过就当深色 */
+function currentPalette(): ITheme {
+  return PALETTES[document.documentElement.dataset.theme === 'light' ? 'light' : 'dark']
+}
+
+/** 切主题时把**已经建好**的终端一起换掉，否则旧会话会留着上一套颜色 */
+export function setTerminalPalette(theme: 'light' | 'dark') {
+  for (const entry of entries.values()) {
+    entry.term.options.theme = PALETTES[theme]
+  }
+}
+
 function ensure(id: string): Entry {
   let entry = entries.get(id)
   if (!entry) {
     const container = document.createElement('div')
     // 这个元素不是组件模板里的，scoped 样式够不到它，尺寸只能在这里写死。
-    container.style.width = '100%'
-    container.style.height = '100%'
-    const term = new Terminal({ fontSize: 13, scrollback: 5000 })
+    // 用 absolute + inset:0 而不是 width/height:100%：后者算的是**内容盒**，
+    // xterm 自己那层还要加 padding，底边会差出一两像素露出生色。
+    // 宿主（TerminalPane 的根）是 relative，绝对定位正好铺满它。
+    container.style.position = 'absolute'
+    container.style.inset = '0'
+    const term = new Terminal({
+      fontSize: 13,
+      scrollback: 5000,
+      fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
+      theme: currentPalette(),
+    })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     // 键盘这一路：xterm 把按键编成字节串交出来，原样送给后端。

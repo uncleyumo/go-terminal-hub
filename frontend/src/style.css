@@ -1,15 +1,255 @@
-/* 宽高把 padding/border 算进去。不算进去的话，写了 width:100% 再加 padding 就会撑破父元素 */
-* {
-    box-sizing: border-box;
+@import 'tailwindcss';
+@import '@xterm/xterm/css/xterm.css';
+
+/*
+ * 语义色 + 主题映射。
+ *
+ * 规矩：组件里只许用语义名（bg-surface / text-ink-dim / border-line），
+ * 不许写死具体色值。Tailwind 的主题色全部指向下面这组变量，
+ * 改主题只改 :root 和 :root[data-theme='light'] 这两块。
+ */
+@theme inline {
+  --font-sans:
+    'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'PingFang SC',
+    'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono:
+    'Cascadia Code', 'Cascadia Mono', Consolas, 'Microsoft YaHei', monospace;
+
+  --color-canvas: var(--c-canvas);
+  --color-term: var(--c-term);
+  --color-sunken: var(--c-sunken);
+  --color-surface: var(--c-surface);
+  --color-raised: var(--c-raised);
+  --color-overlay: var(--c-overlay);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-ink: var(--c-ink);
+  --color-ink-dim: var(--c-ink-dim);
+  --color-ink-faint: var(--c-ink-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-solid: var(--c-accent-solid);
+  --color-accent-solid-hover: var(--c-accent-solid-hover);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-pos: var(--c-pos);
+  --color-neg: var(--c-neg);
+  --color-warn: var(--c-warn);
 }
 
-/* 盖掉浏览器默认给 body 的 8px 外边距；height:100% 让后代能用百分比高度 */
-html, body {
+/*
+ * 两套配色，唯一真源。
+ *
+ * 🔴 --c-accent-solid 为什么是**另一个**颜色：
+ * `--c-accent` 是「好看的蓝」，白字压上去只有 3.20:1 —— 达不到 4.5:1，
+ * 而每一个主按钮的文字都是 13px 普通字号。焦点环、状态点、文字强调这些
+ * **非文字**场景 3:1 就够，用 accent 反而更亮更清楚。
+ * 所以拆成两个：accent 管「点缀」，accent-solid 管「实心填充」。
+ *
+ * ✅ --c-term 是终端区域的底色，两个主题下**不是同一个值**：深色主题用近黑，
+ * 浅色主题用跟画布同一档的浅灰，理由见下面 `:root[data-theme='light']` 那块。
+ */
+:root {
+  color-scheme: dark;
+
+  /* 四级高度：canvas 最底，往上依次 sunken → surface → raised / overlay */
+  --c-canvas: #0a0c11;
+  --c-term: #07090d;
+  --c-sunken: #0d1016;
+  --c-surface: #12151d;
+  --c-raised: #191d28;
+  --c-overlay: #1b2030;
+
+  --c-line: #1f2431;
+  --c-line-strong: #2c3346;
+
+  --c-ink: #e8ebf2;
+  --c-ink-dim: #98a1b6;
+  /* 5.27:1 on sunken。原先 #646d82 只有 3.67:1，不合格 */
+  --c-ink-faint: #7d879b;
+
+  --c-accent: #4c8dff;
+  --c-accent-solid: #2f6fe0;
+  --c-accent-solid-hover: #3b7bec;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgb(76 141 255 / 0.14);
+
+  --c-pos: #3fb950;
+  --c-neg: #f4695f;
+  --c-warn: #d8a53a;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --c-canvas: #f4f5f7;
+  /* 浅色界面下终端也是浅色，取跟 --c-sunken 同一个值。
+     原来这里是一档深炭灰 #1a1d24，浅色界面里看着就是一块死黑（2026-09-28 学习者指出）。 */
+  --c-term: #edeff3;
+  --c-sunken: #edeff3;
+  --c-surface: #ffffff;
+  --c-raised: #e6e9ef;
+  --c-overlay: #ffffff;
+
+  --c-line: #e0e3e9;
+  --c-line-strong: #c8cdd7;
+
+  --c-ink: #171a20;
+  --c-ink-dim: #4a5261;
+  /* 4.60:1 on sunken */
+  --c-ink-faint: #646c7a;
+
+  --c-accent: #2563eb;
+  --c-accent-solid: #2563eb;
+  --c-accent-solid-hover: #1d4ed8;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgb(37 99 235 / 0.1);
+
+  --c-pos: #0f6b31;
+  --c-neg: #cf222e;
+  --c-warn: #9a6700;
+}
+
+/*
+ * 元素重置一律放进 @layer base。
+ *
+ * ⚠️ 别把它们挪出来：Tailwind v4 把工具类放在 @layer utilities 里，
+ * 而**没有层级的规则优先级高于任何层级内的规则**（与选择器特异性无关）。
+ * 之前 `button { background: none; border: 0 }` 写在层外，
+ * 结果把 .bg-accent / .border-line-strong 全压掉了 —— 按钮只剩一个字，
+ * 开关只剩一个白圈。放进 base 层之后才是「基础样式打底、工具类覆盖」的正确顺序。
+ */
+@layer base {
+  /* 宽高把 padding/border 算进去。不算进去的话，写了 width:100% 再加 padding 就会撑破父元素 */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* 盖掉浏览器默认给 body 的 8px 外边距；height:100% 让后代能用百分比高度 */
+  html,
+  body {
     margin: 0;
     height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    /* 13px 是这套密度的基准；标题/次要信息各自再调，不靠继承 */
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--c-ink);
+    background: var(--c-canvas);
+    /* 关掉字体合成器的斜体/粗体伪影，Windows 上 CJK 粗体尤其明显 */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* 界面是工具，不是文档：默认不选中，拖选文本时再局部选 */
+    user-select: none;
+  }
+
+  /* #app 是 Vue 的挂载点，让它自己不生成盒子，它的子元素直接参与 body 的布局 */
+  #app {
+    display: contents;
+  }
+
+  /* 输入类元素里可以正常选中/编辑 —— 上一条把整个界面都关掉了，这里开回来 */
+  input,
+  textarea,
+  [data-selectable] {
+    user-select: text;
+  }
+
+  ::selection {
+    background: var(--c-accent-soft);
+    color: var(--c-ink);
+  }
+
+  /* 所有可点的东西统一这一套：去掉浏览器默认的描边和背景 */
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  /* 焦点圈：键盘 Tab 过去要有，鼠标点下去不要 */
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* 滚动条：细、暗、不抢眼 —— 系统默认那根粗条在深色底上非常扎眼 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-line-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--c-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--c-ink-faint);
+    background-clip: content-box;
+  }
+
+  /* xterm 自己那层是 inline-flex，主题由 JS 的 theme 选项管，这里只管边距 */
+  .xterm {
+    padding: 8px 10px;
+  }
+
+  /* 系统开了「减少动态效果」就把所有过渡收掉。
+     这里的动画全是状态反馈（弹框进出、提示条），不是叙事，少了不影响理解。 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-/* #app 是 Vue 的挂载点，让它自己不生成盒子，它的子元素直接参与 body 的布局 */
-#app {
-    display: contents;
+/* ── 以下必须写在 @layer base 之外 ──────────────────────────────────────
+   xterm.css 是**无层级**样式，而无层级规则的优先级高于任何层级内的规则，
+   **与选择器特异性无关**（跟上面 @layer base 那段注释是同一条道理）。
+   所以下面这几条要是也塞进 base 层，写多重的选择器都压不住 xterm.css ——
+   这就是前面连着三次改不动的真正原因，每次都误判成「特异性不够」。 */
+.bg-term {
+  /* xterm 的 `.xterm-scrollable-element > .shadow.top` / `.shadow.left` 画在终端
+     上边缘和左边缘，颜色取自这个变量。项目里从没定义过，xterm 就 fallback 成 #000。 */
+  --vscode-scrollbar-shadow: transparent;
+}
+
+/* xterm.css 给 `.xterm-viewport` 写死了 `background-color: #000`，而它是
+   `position:absolute; inset:0` —— 铺满整个 .xterm（padding 也算在内）。
+   真正跟着主题上色的是它里面的 `.xterm-scrollable-element`，那个只占 padding
+   以内的区域，于是 .xterm 的 padding 那一圈露出来的就是这层黑底（浅色主题下
+   看得见，2026-09-28 学习者指出）。多带一层 .bg-term 提权，压过 xterm.css 那条。 */
+.bg-term .xterm .xterm-viewport {
+  background-color: var(--c-term);
 }

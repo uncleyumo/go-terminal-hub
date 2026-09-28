@@ -2,9 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/wails.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Wails + Vue + TS</title>
+    <title>go-terminal-hub</title>
+    <script>
+      /*
+       * 首帧上色。
+       *
+       * 主模块要等一次后端往返才知道 settings.json 里写的是什么，那之前 <html> 上
+       * 没有 data-theme，只会按 :root 的深色走 —— 系统是浅色时第一帧就是黑的，闪一下。
+       * 这里先读上次 applyTheme() 缓存的**解析结果**（light / dark）直接上色，
+       * 等真值到了再由 applyTheme 校正。
+       *
+       * 读不到就什么都不做，静默退回深色 —— 不阻塞启动。
+       * key 必须和 src/theme.ts 里的 CACHE_KEY 一致。
+       */
+      try {
+        var cached = localStorage.getItem('go-terminal-hub.theme')
+        if (cached === 'light' || cached === 'dark') {
+          document.documentElement.dataset.theme = cached
+        }
+      } catch (e) {
+        /* 隐私模式 / 协议不支持 localStorage，跳过即可 */
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

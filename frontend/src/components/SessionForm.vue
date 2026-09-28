@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { FolderOpened } from '@element-plus/icons-vue'
 import { Dialogs } from '@wailsio/runtime'
+import UButton from './ui/UButton.vue'
+import UDialog from './ui/UDialog.vue'
+import UInput from './ui/UInput.vue'
+import UNumber from './ui/UNumber.vue'
+import USegmented from './ui/USegmented.vue'
+import USelect from './ui/USelect.vue'
+import USwitch from './ui/USwitch.vue'
+import UTextarea from './ui/UTextarea.vue'
+import { notify } from './ui/toast'
 import { createSession, updateSession, type DataStore, type SessionView } from '../api'
 
 const props = defineProps<{
@@ -27,10 +34,19 @@ const isEdit = computed(() => props.session !== null)
 const title = computed(() => (isEdit.value ? t('form.editTitle') : t('form.createTitle')))
 
 const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell']
-const MODES = ['terminal', 'log']
+// log 模式后端还没做：internal/exec/hub/hub.go 的 switch 里 case "log" 直接
+// 返回 error，选了必然启动失败。先摆出来但禁掉，做完再放开（2026-09-28 学习者指出）
+const MODES = [
+  { value: 'terminal', disabled: false },
+  { value: 'log', disabled: true },
+]
 const ENCODINGS = ['auto', 'utf8', 'gbk']
 
-const formRef = ref()
+const kindOptions = computed(() => KINDS.map((k) => ({ label: t(`kind.${k}`), value: k })))
+const modeOptions = computed(() =>
+  MODES.map((m) => ({ label: t(`mode.${m.value}`), value: m.value, disabled: m.disabled })),
+)
+const encodingOptions = ENCODINGS.map((e) => ({ label: e, value: e }))
 
 interface FormState {
   id: string
@@ -46,8 +62,6 @@ interface FormState {
   rows: number
   autoStart: boolean
 }
-
-const form = reactive<FormState>(blank())
 
 function blank(): FormState {
   return {
@@ -66,40 +80,39 @@ function blank(): FormState {
   }
 }
 
+const form = reactive<FormState>(blank())
+const errors = reactive({ name: '', target: '' })
+
 // 每次打开都把上一次的残留清掉：编辑时灌入这条配置，新建时回到默认值。
 watch(visible, (open) => {
   if (!open) return
   const source = props.session?.config
-  if (!source) {
-    Object.assign(form, blank())
-    return
-  }
-  Object.assign(form, {
-    id: source.id,
-    name: source.name,
-    kind: source.kind,
-    target: source.target,
-    args: source.args,
-    workDir: source.workDir,
-    envText: (source.env ?? []).join('\n'),
-    mode: source.mode,
-    encoding: source.encoding,
-    cols: source.cols,
-    rows: source.rows,
-    autoStart: source.autoStart,
-  })
+  Object.assign(
+    form,
+    source
+      ? {
+          id: source.id,
+          name: source.name,
+          kind: source.kind,
+          target: source.target,
+          args: source.args,
+          workDir: source.workDir,
+          envText: (source.env ?? []).join('\n'),
+          mode: source.mode,
+          encoding: source.encoding,
+          cols: source.cols,
+          rows: source.rows,
+          autoStart: source.autoStart,
+        }
+      : blank(),
+  )
+  errors.name = ''
+  errors.target = ''
 })
 
 // shell 的 target 是一整条命令，不是一个文件路径，没有文件名可以拿来兜底命名，
 // 所以名称只在 shell 下必填；其余 kind 留空由下面自动生成。
 const isShell = computed(() => form.kind === 'shell')
-
-const rules = computed(() => ({
-  name: isShell.value
-    ? [{ required: true, message: () => t('form.nameRequired'), trigger: 'blur' }]
-    : [],
-  target: [{ required: true, message: () => t('form.targetRequired'), trigger: 'blur' }],
-}))
 
 // —— 名称自动生成 ——
 // 格式「脚本文件名(创建时间)」，例 xxx.exe(2026-09-27 21:30)。
@@ -155,7 +168,7 @@ async function pickFile() {
     if (!picked) return
     form.target = picked
   } catch (error) {
-    ElMessage.error(`${t('form.pickFailed')}: ${String(error)}`)
+    notify.error(`${t('form.pickFailed')}: ${String(error)}`)
   }
 }
 
@@ -189,29 +202,32 @@ function toDataStore(): DataStore {
 
 const saving = ref(false)
 
-async function submit() {
+function validate(): boolean {
   // 兜底：用户手打了路径、没走「浏览」按钮，名称一直是空的。
   if (!isShell.value && form.name.trim() === '' && form.target.trim() !== '') {
     form.name = autoName(form.target)
   }
-  if (formRef.value) {
-    const ok = await formRef.value.validate().catch(() => false)
-    if (!ok) return
-  }
+  errors.name = isShell.value && form.name.trim() === '' ? t('form.nameRequired') : ''
+  errors.target = form.target.trim() === '' ? t('form.targetRequired') : ''
+  return !errors.name && !errors.target
+}
+
+async function submit() {
+  if (saving.value || !validate()) return
   saving.value = true
   try {
     if (isEdit.value) {
       await updateSession(form.id, toDataStore())
-      ElMessage.success(t('msg.updated'))
+      notify.success(t('msg.updated'))
     } else {
       // ID 由后端生成（UUIDv7），这里不传
       await createSession(toDataStore())
-      ElMessage.success(t('msg.created'))
+      notify.success(t('msg.created'))
     }
     visible.value = false
     emit('saved')
   } catch (error) {
-    ElMessage.error(String(error))
+    notify.error(String(error))
   } finally {
     saving.value = false
   }
@@ -219,107 +235,122 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="title" width="560px" append-to-body>
-    <el-form
-      ref="formRef"
-      class="form-body"
-      :model="form"
-      :rules="rules"
-      label-width="120px"
-      label-position="left"
-    >
-      <el-form-item :label="t('form.name')" prop="name">
-        <el-input v-model="form.name" :placeholder="namePlaceholder" />
-      </el-form-item>
-
-      <el-form-item :label="t('form.kind')" prop="kind">
-        <el-radio-group v-model="form.kind">
-          <el-radio-button v-for="kind in KINDS" :key="kind" :value="kind">
-            {{ t(`kind.${kind}`) }}
-          </el-radio-button>
-        </el-radio-group>
-      </el-form-item>
-
-      <el-form-item :label="t('form.target')" prop="target">
-        <el-input v-model="form.target" :placeholder="targetPlaceholder">
-          <template v-if="canPick" #append>
-            <el-button :icon="FolderOpened" @click="pickFile">{{ t('form.browse') }}</el-button>
-          </template>
-        </el-input>
-      </el-form-item>
-
-      <el-form-item :label="t('form.args')" prop="args">
-        <el-input v-model="form.args" :placeholder="t('form.argsPlaceholder')" />
-      </el-form-item>
-
-      <el-form-item :label="t('form.workDir')" prop="workDir">
-        <el-input v-model="form.workDir" :placeholder="t('form.workDirPlaceholder')" />
-      </el-form-item>
-
-      <el-form-item :label="t('form.env')" prop="envText">
-        <el-input
-          v-model="form.envText"
-          type="textarea"
-          :rows="3"
-          :placeholder="t('form.envPlaceholder')"
+  <UDialog v-model="visible" :title="title">
+    <div class="flex flex-col gap-3.5">
+      <!-- 标签在上、控件在下：同一列里对齐，两列并排时读起来是一条一条的 -->
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.name') }}
+          <span v-if="isShell" class="text-neg">*</span>
+        </label>
+        <UInput
+          v-model="form.name"
+          :placeholder="namePlaceholder"
+          :invalid="!!errors.name"
+          @enter="submit"
         />
-      </el-form-item>
+        <p v-if="errors.name" class="mt-1 text-[11px] text-neg">{{ errors.name }}</p>
+      </div>
 
-      <el-form-item :label="t('form.mode')" prop="mode">
-        <el-radio-group v-model="form.mode">
-          <el-radio-button v-for="mode in MODES" :key="mode" :value="mode">
-            {{ t(`mode.${mode}`) }}
-          </el-radio-button>
-        </el-radio-group>
-        <el-select v-model="form.encoding" class="encoding">
-          <el-option v-for="encoding in ENCODINGS" :key="encoding" :label="encoding" :value="encoding" />
-        </el-select>
-        <span class="hint">{{ t('form.encodingHint') }}</span>
-      </el-form-item>
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.kind') }}
+        </label>
+        <USegmented v-model="form.kind" :options="kindOptions" />
+      </div>
 
-      <el-form-item :label="t('form.cols')" prop="cols">
-        <el-input-number v-model="form.cols" :min="1" :max="1000" controls-position="right" />
-      </el-form-item>
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.target') }}
+          <span class="text-neg">*</span>
+        </label>
+        <UInput
+          v-model="form.target"
+          :placeholder="targetPlaceholder"
+          :invalid="!!errors.target"
+          mono
+          @enter="submit"
+        >
+          <template v-if="canPick" #suffix>
+            <UButton variant="ghost" size="sm" icon="folder" @click="pickFile">
+              {{ t('form.browse') }}
+            </UButton>
+          </template>
+        </UInput>
+        <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
+      </div>
 
-      <el-form-item :label="t('form.rows')" prop="rows">
-        <el-input-number v-model="form.rows" :min="1" :max="1000" controls-position="right" />
-      </el-form-item>
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.args') }}
+        </label>
+        <UInput v-model="form.args" :placeholder="t('form.argsPlaceholder')" mono />
+      </div>
 
-      <el-form-item :label="t('form.autoStart')" prop="autoStart">
-        <el-switch v-model="form.autoStart" />
-        <span class="hint">{{ t('form.autoStartHint') }}</span>
-      </el-form-item>
-    </el-form>
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.workDir') }}
+        </label>
+        <UInput v-model="form.workDir" :placeholder="t('form.workDirPlaceholder')" mono />
+      </div>
+
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.env') }}
+        </label>
+        <UTextarea v-model="form.envText" :rows="3" :placeholder="t('form.envPlaceholder')" mono />
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.mode') }}
+          </label>
+          <USegmented v-model="form.mode" :options="modeOptions" />
+          <p class="mt-1.5 text-[10px] text-ink-faint">
+            {{ t('mode.log') }} — {{ t('mode.logUnavailable') }}
+          </p>
+        </div>
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.encoding') }}
+            <span class="ml-1 normal-case text-ink-faint">{{ t('form.encodingHint') }}</span>
+          </label>
+          <USelect v-model="form.encoding" :options="encodingOptions" class="w-full" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.cols') }}
+          </label>
+          <UNumber v-model="form.cols" :aria-label="t('form.cols')" />
+        </div>
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.rows') }}
+          </label>
+          <UNumber v-model="form.rows" :aria-label="t('form.rows')" />
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <USwitch v-model="form.autoStart" />
+        <div>
+          <div class="text-[13px] text-ink">{{ t('form.autoStart') }}</div>
+          <div class="text-[11px] text-ink-faint">{{ t('form.autoStartHint') }}</div>
+        </div>
+      </div>
+    </div>
 
     <template #footer>
-      <el-button @click="visible = false">{{ t('action.cancel') }}</el-button>
-      <el-button type="primary" :loading="saving" @click="submit">
+      <UButton variant="default" size="sm" @click="visible = false">
+        {{ t('action.cancel') }}
+      </UButton>
+      <UButton variant="primary" size="sm" :disabled="saving" @click="submit">
         {{ isEdit ? t('action.save') : t('action.create') }}
-      </el-button>
+      </UButton>
     </template>
-  </el-dialog>
+  </UDialog>
 </template>
-
-<style scoped>
-/*
- * 表单竖着堆 11 项，窗口一矮就顶到底边（el-dialog 自己是 fixed 定位，不滚动）。
- * 给表单体一个上限高度、超出就滚，弹框的标题和按钮永远在视口里。
- * 上限用 vh 而不是写死 px —— 窗口越矮，能分给它的就越少。
- */
-.form-body {
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: 6px;
-}
-
-.encoding {
-  width: 100px;
-  margin-left: 12px;
-}
-
-.hint {
-  margin-left: 8px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-</style>

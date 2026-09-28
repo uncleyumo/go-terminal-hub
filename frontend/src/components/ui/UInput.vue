@@ -1,0 +1,45 @@
+<script setup lang="ts">
+// 单行输入。用原生 <input>，样式自己画 —— 组件库那套输入框的毛病是内边距和行高
+// 都比这套密度高，混在 13px 的界面里会明显鼓出来。
+withDefaults(
+  defineProps<{
+    modelValue: string
+    placeholder?: string
+    type?: string
+    invalid?: boolean
+    disabled?: boolean
+    /** 输入框右边塞一个按钮（浏览…那类） */
+    mono?: boolean
+  }>(),
+  { type: 'text', invalid: false, disabled: false, mono: false },
+)
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+  enter: []
+}>()
+</script>
+
+<template>
+  <div
+    class="flex items-stretch rounded-lg border bg-sunken transition-colors duration-100 focus-within:border-accent"
+    :class="invalid ? 'border-neg' : 'border-line-strong'"
+  >
+    <input
+      :type="type"
+      :value="modelValue"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      spellcheck="false"
+      autocomplete="off"
+      class="min-w-0 flex-1 bg-transparent px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-faint disabled:opacity-50"
+      :class="mono && 'font-mono text-xs'"
+      @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @keydown.enter="emit('enter')"
+    />
+    <!-- 附加区不跟输入框抢焦点：里面的按钮自己管 -->
+    <div v-if="$slots.suffix" class="flex items-center border-l border-line pl-1.5 pr-1.5">
+      <slot name="suffix" />
+    </div>
+  </div>
+</template>
