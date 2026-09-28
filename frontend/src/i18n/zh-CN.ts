@@ -74,6 +74,7 @@ export default {
     autoStartHint: '打开应用时自动启动这个会话',
     browse: '浏览…',
     pickTitle: '选择脚本文件',
+    pickDirTitle: '选择工作目录',
     pickAllFiles: '所有文件',
     pickFailed: '打开文件选择框失败',
     nameAutoHint: '留空则按「脚本名(时间)」自动命名',
@@ -112,6 +113,8 @@ export default {
     ps1: 'ps1',
     exe: 'exe',
     shell: 'shell',
+    'terminal-cmd': 'terminal(cmd)',
+    'terminal-powershell': 'terminal(powershell)',
   },
   mode: {
     terminal: 'terminal',

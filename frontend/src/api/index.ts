@@ -55,6 +55,18 @@ export function saveSettings(settings: Settings): Promise<void> {
   return StoreService.SaveSettings(settings)
 }
 
+// app 进程当前的工作目录。新建配置时拿它当工作目录的默认值 ——
+// 用户不填也能在详情里看见到底是哪个目录，用着踏实。
+// 拿不到就返回空串，表单退回「留空 = 继承当前目录」的老行为。
+export async function getAppWorkDir(): Promise<string> {
+  try {
+    return await AppService.GetAppWorkDir()
+  } catch (error) {
+    console.debug('get app work dir failed', error)
+    return ''
+  }
+}
+
 // —— 登录自启（D31/D32）——
 // 后端 SetStartOnBoot 自己会写 settings.json（和注册表一起），前端写完不用再 saveSettings。
 // 读不用单开一口：getSettings() 返回的那份里就带 startOnBoot。

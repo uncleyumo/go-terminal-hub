@@ -74,6 +74,7 @@ export default {
     autoStartHint: 'Start this session automatically when the app opens',
     browse: 'Browse…',
     pickTitle: 'Select a script file',
+    pickDirTitle: 'Select a working directory',
     pickAllFiles: 'All files',
     pickFailed: 'Failed to open the file picker',
     nameAutoHint: 'Leave empty to name it after the script file and time',
@@ -112,6 +113,8 @@ export default {
     ps1: 'ps1',
     exe: 'exe',
     shell: 'shell',
+    'terminal-cmd': 'terminal(cmd)',
+    'terminal-powershell': 'terminal(powershell)',
   },
   mode: {
     terminal: 'terminal',

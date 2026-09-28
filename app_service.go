@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -41,4 +43,8 @@ func (a *AppService) SetStartOnBoot(enabled bool) error {
 		err = app.Autostart.Disable()
 	}
 	return err
+}
+
+func (a *AppService) GetAppWorkDir() (string, error) {
+	return os.Getwd()
 }

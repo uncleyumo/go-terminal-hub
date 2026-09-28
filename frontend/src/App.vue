@@ -334,28 +334,35 @@ onBeforeUnmount(() => {
     <!-- 顶栏。左侧是开关和搜索，右侧是一排同一种图标按钮；
          应用名和图标交给系统标题栏，不在这里画第二份。 -->
     <header class="flex h-11 flex-none items-center gap-3 border-b border-line bg-surface pr-2 pl-3">
-      <div
-        class="flex w-[280px] flex-none items-center gap-2 rounded-lg border border-transparent bg-sunken px-2 transition-colors duration-100 focus-within:border-accent"
-      >
-        <UIcon name="search" :size="14" class="flex-none text-ink-faint" />
-        <input
-          v-model="query"
-          type="search"
-          :placeholder="t('app.searchPlaceholder')"
-          :aria-label="t('app.search')"
-          spellcheck="false"
-          autocomplete="off"
-          class="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
-        />
-        <button
-          v-if="query"
-          type="button"
-          class="flex-none text-ink-faint transition-colors hover:text-ink"
-          :aria-label="t('app.searchClear')"
-          @click="query = ''"
+      <!-- 搜索框**不再是**「一个宽度凑出来的数」，而是跟 SessionList 那行同一个盒子：
+           同样的 w-[268px] + px-3，灰底那一层再 flex-1 填满剩下的。
+           之前写死 w-[244px] / w-[248px] 都是拿 268 减 px-3 算的，
+           减来减去跟它对不上（2026-09-28 学习者两次指出没对齐）。
+           这样写就**没有可算错的数**——px-3 解析成多少，两边都一样。 -->
+      <div class="flex w-[268px] flex-none items-center px-3">
+        <div
+          class="flex flex-1 items-center gap-2 rounded-lg border border-transparent bg-sunken px-2 transition-colors duration-100 focus-within:border-accent"
         >
-          <UIcon name="x" :size="13" />
-        </button>
+          <UIcon name="search" :size="14" class="flex-none text-ink-faint" />
+          <input
+            v-model="query"
+            type="search"
+            :placeholder="t('app.searchPlaceholder')"
+            :aria-label="t('app.search')"
+            spellcheck="false"
+            autocomplete="off"
+            class="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
+          />
+          <button
+            v-if="query"
+            type="button"
+            class="flex-none text-ink-faint transition-colors hover:text-ink"
+            :aria-label="t('app.searchClear')"
+            @click="query = ''"
+          >
+            <UIcon name="x" :size="13" />
+          </button>
+        </div>
       </div>
 
       <div class="flex-1"></div>

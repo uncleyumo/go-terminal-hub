@@ -103,6 +103,23 @@ function ensure(id: string): Entry {
         console.debug('write to session failed', error)
       })
     })
+    // Ctrl+V 得自己接一下，但**只做一半**。
+    // 现象（2026-09-28 实测）：按一次 Ctrl+V 粘出来**两份**。
+    // 原因：浏览器的原生 paste 事件照样落在 xterm 的隐藏 textarea 上，xterm 自己粘一份；
+    // 我们再从剪贴板读一次粘一份 —— 两条路都通，就重了。
+    // 而在加这段之前，Ctrl+V 是被 xterm 当普通按键、把字节 0x16 发给后端的
+    // （cmd 收到控制字符，显示成 ^V，往正在输入的那行里插垃圾字符）。
+    //
+    // 所以这里**只**返回 false 让 xterm 别把 Ctrl+V 编成字节发出去，
+    // **不调 preventDefault** —— 让浏览器那次原生 paste 照常发生，由 xterm 粘。
+    // 净效果：只有一份，垃圾字符也没了。
+    // Shift+Insert / Ctrl+Insert 走 xterm 自带的绑定，不受影响。
+    term.attachCustomKeyEventHandler((event) => {
+      if (!event.ctrlKey || event.shiftKey || event.altKey) return true
+      // 用 code 而不是 key：code 是物理键位，不受输入法布局影响
+      if (event.code !== 'KeyV') return true
+      return false
+    })
     const observer = new ResizeObserver(() => scheduleFit(id))
     entry = { term, container, fitAddon, observer, opened: false }
     entries.set(id, entry)

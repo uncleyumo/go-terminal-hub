@@ -43,7 +43,7 @@ withDefaults(
   <button
     :type="type"
     :disabled="disabled"
-    class="inline-flex items-center justify-center font-medium whitespace-nowrap transition-colors duration-100 select-none"
+    class="inline-flex flex-none items-center justify-center font-medium whitespace-nowrap transition-colors duration-100 select-none"
     :class="[
       VARIANT[variant],
       SIZE[size],

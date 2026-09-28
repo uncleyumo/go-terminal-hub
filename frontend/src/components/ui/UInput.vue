@@ -37,8 +37,11 @@ const emit = defineEmits<{
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @keydown.enter="emit('enter')"
     />
-    <!-- 附加区不跟输入框抢焦点：里面的按钮自己管 -->
-    <div v-if="$slots.suffix" class="flex items-center border-l border-line pl-1.5 pr-1.5">
+    <!-- 附加区不跟输入框抢焦点：里面的按钮自己管。
+         flex-none 不能省：输入框那边是 min-w-0 flex-1，可以一路缩到 0，
+         而这个容器默认能缩（flex-shrink:1）——宽度紧张时先被压扁的是它，
+         里面的按钮跟着被挤，文字截成「浏览…」。 -->
+    <div v-if="$slots.suffix" class="flex flex-none items-center border-l border-line pl-1.5 pr-1.5">
       <slot name="suffix" />
     </div>
   </div>

@@ -11,7 +11,7 @@ import USelect from './ui/USelect.vue'
 import USwitch from './ui/USwitch.vue'
 import UTextarea from './ui/UTextarea.vue'
 import { notify } from './ui/toast'
-import { createSession, updateSession, type DataStore, type SessionView } from '../api'
+import { createSession, getAppWorkDir, updateSession, type DataStore, type SessionView } from '../api'
 
 const props = defineProps<{
   modelValue: boolean
@@ -33,7 +33,16 @@ const visible = computed({
 const isEdit = computed(() => props.session !== null)
 const title = computed(() => (isEdit.value ? t('form.editTitle') : t('form.createTitle')))
 
-const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell']
+const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell', 'terminal-cmd', 'terminal-powershell']
+
+// terminal-* 这两个**只存在于前端**：后端的白名单不认它们（executor.go:36），
+// 提交时在 toDataStore() 里翻译成 kind=shell + 拼好的 target（D39，后端零改动）。
+// target 的值就是「起一个常驻 shell」的那条命令 —— /k 的意思是执行完不退出，
+// PowerShell 不带 -Command 也是同一个效果。
+const TERMINAL_TARGETS: Record<string, string> = {
+  'terminal-cmd': 'cmd.exe /k',
+  'terminal-powershell': 'powershell.exe -NoLogo -NoProfile',
+}
 // log 模式后端还没做：internal/exec/hub/hub.go 的 switch 里 case "log" 直接
 // 返回 error，选了必然启动失败。先摆出来但禁掉，做完再放开（2026-09-28 学习者指出）
 const MODES = [
@@ -108,14 +117,26 @@ watch(visible, (open) => {
   )
   errors.name = ''
   errors.target = ''
+  // 新建时把工作目录预填成 app 当前的目录（2026-09-28 学习者要的）：
+  // 留空虽然也能跑，但详情里显示「(empty)」看不出到底是哪儿。
+  // 编辑旧配置时不碰 —— 那是人家自己填的。
+  if (!source) {
+    void getAppWorkDir().then((dir) => {
+      // 弹窗关了、或者用户已经自己改过了，就别覆盖
+      if (visible.value && form.workDir === '' && dir) form.workDir = dir
+    })
+  }
 })
 
 // shell 的 target 是一整条命令，不是一个文件路径，没有文件名可以拿来兜底命名，
 // 所以名称只在 shell 下必填；其余 kind 留空由下面自动生成。
 const isShell = computed(() => form.kind === 'shell')
+// 常驻终端：既不用 target 也不用 args（那条命令前端已经拼好了）
+const isTerminal = computed(() => TERMINAL_TARGETS[form.kind] !== undefined)
 
 // —— 名称自动生成 ——
-// 格式「脚本文件名(创建时间)」，例 xxx.exe(2026-09-27 21:30)。
+// 格式「<名字>  (<创建时间>)」，例 xxx.exe  (2026-09-27 21:30)。
+// 名字和时间之间空两个，跟时间里的空格拉开距离，一眼看得出是两段。
 // 时间取生成这一刻，不是脚本文件自己的时间戳。
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -127,17 +148,24 @@ function scriptName(target: string): string {
   return parts[parts.length - 1] || target
 }
 
-function autoName(target: string): string {
+function autoName(): string {
   const now = new Date()
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`
-  return `${scriptName(target)}(${date} ${time})`
+  // 常驻终端没有 target 可取名，直接拿类型当名字：terminal-cmd / terminal-powershell
+  const base = isTerminal.value ? form.kind : scriptName(form.target)
+  return `${base}  (${date} ${time})`
 }
 
-// 名称还是空的、且不是 shell 时自动补上；绝不覆盖用户已经写下的名字。
+// 名称还是空的就自动补上；绝不覆盖用户已经写下的名字。
 watch([() => form.target, () => form.kind], () => {
-  if (isShell.value || form.name.trim() !== '' || form.target.trim() === '') return
-  form.name = autoName(form.target)
+  if (form.name.trim() !== '') return
+  if (isTerminal.value) {
+    form.name = autoName()
+    return
+  }
+  if (isShell.value || form.target.trim() === '') return
+  form.name = autoName()
 })
 
 // —— 文件选择框 ——
@@ -172,6 +200,23 @@ async function pickFile() {
   }
 }
 
+// 工作目录的按钮弹的是「选文件夹」不是「选文件」——同一个 OpenFile，
+// 靠 CanChooseFiles: false / CanChooseDirectories: true 把它切成目录模式
+// （@wailsio/runtime 的 OpenFileDialogOptions 上就有这两个字段，不需要后端加方法）。
+async function pickDir() {
+  try {
+    const picked = await Dialogs.OpenFile({
+      Title: t('form.pickDirTitle'),
+      CanChooseFiles: false,
+      CanChooseDirectories: true,
+    })
+    if (!picked) return
+    form.workDir = picked
+  } catch (error) {
+    notify.error(`${t('form.pickFailed')}: ${String(error)}`)
+  }
+}
+
 const namePlaceholder = computed(() =>
   isShell.value ? t('form.namePlaceholder') : t('form.nameAutoHint'),
 )
@@ -184,8 +229,9 @@ function toDataStore(): DataStore {
   return {
     id: form.id,
     name: form.name,
-    kind: form.kind,
-    target: form.target,
+    // 常驻终端在前端有自己的类型，后端只认 shell —— 这里翻译掉（D39）
+    kind: isTerminal.value ? 'shell' : form.kind,
+    target: isTerminal.value ? TERMINAL_TARGETS[form.kind] : form.target,
     args: form.args,
     workDir: form.workDir,
     env: form.envText
@@ -205,10 +251,13 @@ const saving = ref(false)
 function validate(): boolean {
   // 兜底：用户手打了路径、没走「浏览」按钮，名称一直是空的。
   if (!isShell.value && form.name.trim() === '' && form.target.trim() !== '') {
-    form.name = autoName(form.target)
+    form.name = autoName()
   }
-  errors.name = isShell.value && form.name.trim() === '' ? t('form.nameRequired') : ''
-  errors.target = form.target.trim() === '' ? t('form.targetRequired') : ''
+  // 常驻终端没有 target，名字必填（跟 shell 一样），但不用去查 target 存不存在
+  errors.name =
+    (isShell.value || isTerminal.value) && form.name.trim() === '' ? t('form.nameRequired') : ''
+  errors.target =
+    !isTerminal.value && form.target.trim() === '' ? t('form.targetRequired') : ''
   return !errors.name && !errors.target
 }
 
@@ -259,39 +308,48 @@ async function submit() {
         <USegmented v-model="form.kind" :options="kindOptions" />
       </div>
 
-      <div>
-        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
-          {{ t('form.target') }}
-          <span class="text-neg">*</span>
-        </label>
-        <UInput
-          v-model="form.target"
-          :placeholder="targetPlaceholder"
-          :invalid="!!errors.target"
-          mono
-          @enter="submit"
-        >
-          <template v-if="canPick" #suffix>
-            <UButton variant="ghost" size="sm" icon="folder" @click="pickFile">
-              {{ t('form.browse') }}
-            </UButton>
-          </template>
-        </UInput>
-        <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
-      </div>
+      <!-- 常驻终端不用 target 和 args：那条命令前端已经拼好了（D39） -->
+      <template v-if="!isTerminal">
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.target') }}
+            <span class="text-neg">*</span>
+          </label>
+          <UInput
+            v-model="form.target"
+            :placeholder="targetPlaceholder"
+            :invalid="!!errors.target"
+            mono
+            @enter="submit"
+          >
+            <template v-if="canPick" #suffix>
+              <UButton variant="ghost" size="sm" icon="folder" @click="pickFile">
+                {{ t('form.browse') }}
+              </UButton>
+            </template>
+          </UInput>
+          <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
+        </div>
 
-      <div>
-        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
-          {{ t('form.args') }}
-        </label>
-        <UInput v-model="form.args" :placeholder="t('form.argsPlaceholder')" mono />
-      </div>
+        <div>
+          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+            {{ t('form.args') }}
+          </label>
+          <UInput v-model="form.args" :placeholder="t('form.argsPlaceholder')" mono />
+        </div>
+      </template>
 
       <div>
         <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
           {{ t('form.workDir') }}
         </label>
-        <UInput v-model="form.workDir" :placeholder="t('form.workDirPlaceholder')" mono />
+        <UInput v-model="form.workDir" :placeholder="t('form.workDirPlaceholder')" mono>
+          <template #suffix>
+            <UButton variant="ghost" size="sm" icon="folder" @click="pickDir">
+              {{ t('form.browse') }}
+            </UButton>
+          </template>
+        </UInput>
       </div>
 
       <div>
