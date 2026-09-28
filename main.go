@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 
 	"log"
-	"time"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -99,16 +99,6 @@ func main() {
 		URL:              "/",
 	})
 
-	// Create a goroutine that emits an event containing the current time every second.
-	// The frontend can listen to this event and update the UI accordingly.
-	go func() {
-		for {
-			now := time.Now().Format(time.RFC1123)
-			app.Event.Emit("time", now)
-			time.Sleep(time.Second)
-		}
-	}()
-
 	tray := app.SystemTray.New()
 	tray.SetTooltip("go-terminal-hub")
 	tray.AttachWindow(window)
@@ -120,6 +110,18 @@ func main() {
 			e.Cancel()
 		},
 	)
+
+	if storeInstance, err := store.GetStore(); err == nil {
+		if storeInstance.GetSettings().StartOnBoot {
+			if err := app.Autostart.EnableWithOptions(application.AutostartOptions{
+				Arguments: []string{"--autostart"},
+			}); err != nil {
+				slog.Error("failed to enable autostart", "error", err)
+			}
+		}
+	} else {
+		slog.Error("failed to get store when enabling autostart", "error", err)
+	}
 
 	// Run the application. This blocks until the application has been exited.
 	err := app.Run()

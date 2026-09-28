@@ -26,8 +26,9 @@ type DataStore struct {
 }
 
 type Settings struct {
-	Language string `json:"language"`
-	Theme    string `json:"theme"`
+	Language    string `json:"language"`
+	Theme       string `json:"theme"`
+	StartOnBoot bool   `json:"startOnBoot"`
 }
 
 const (
@@ -222,8 +223,9 @@ func (s *Store) GetSettings() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	settings := Settings{
-		Language: "en",
-		Theme:    "light",
+		Language:    "en",
+		Theme:       "light",
+		StartOnBoot: false,
 	}
 	if err := os.MkdirAll(filepath.Dir(s.settingsFilePath), permDir); err != nil {
 		slog.Error("Failed to create directory for settings file", "err", err)

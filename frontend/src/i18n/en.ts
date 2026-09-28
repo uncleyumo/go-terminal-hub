@@ -5,6 +5,8 @@ export default {
     quit: 'Quit',
     language: 'Language',
     settings: 'Settings',
+    startOnBoot: 'Launch on login',
+    startOnBootHint: 'Start automatically when you sign in to Windows. The window stays in the tray.',
   },
   list: {
     title: 'Sessions',

@@ -55,6 +55,13 @@ export function saveSettings(settings: Settings): Promise<void> {
   return StoreService.SaveSettings(settings)
 }
 
+// —— 登录自启（D31/D32）——
+// 后端 SetStartOnBoot 自己会写 settings.json（和注册表一起），前端写完不用再 saveSettings。
+// 读不用单开一口：getSettings() 返回的那份里就带 startOnBoot。
+export function setStartOnBoot(enabled: boolean): Promise<void> {
+  return AppService.SetStartOnBoot(enabled)
+}
+
 // —— 运行控制：都是 hub 的转发，hub 里管的是运行状态 ——
 
 // 撞上还在跑的同 ID 会在 hub 里报错（D15），让用户先停
@@ -75,6 +82,11 @@ export function restartSession(id: string): Promise<void> {
 // Ctrl+C 也走这里（xterm 把它编成 \x03）—— 和「停止」按钮是同一条路。
 export function writeSession(id: string, data: string): Promise<number> {
   return HubService.WriteSession(id, data)
+}
+
+// 终端画布尺寸变了，告诉后端的 ConPTY。会话没在跑时后端会报错，调用方自己吞掉。
+export function resizeSession(id: string, cols: number, rows: number): Promise<void> {
+  return HubService.ResizeSession(id, cols, rows)
 }
 
 // —— 退出：停会话 + 退程序 ——

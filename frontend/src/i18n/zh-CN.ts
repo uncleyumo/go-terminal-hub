@@ -5,6 +5,8 @@ export default {
     quit: '退出',
     language: '语言',
     settings: '设置',
+    startOnBoot: '登录时启动',
+    startOnBootHint: '登录 Windows 后自动启动，窗口收在托盘里',
   },
   list: {
     title: '会话',

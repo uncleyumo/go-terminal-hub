@@ -5,6 +5,14 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
+export function GetStartOnBootStatus(): $CancellablePromise<boolean> {
+    return $Call.ByID(2512739109);
+}
+
 export function QuitApp(): $CancellablePromise<void> {
     return $Call.ByID(3291959616);
+}
+
+export function SetStartOnBoot(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1767860727, enabled);
 }

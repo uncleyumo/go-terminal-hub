@@ -18,12 +18,14 @@ import {
   quitApp,
   restartSession,
   saveSettings,
+  setStartOnBoot,
   startSession,
   stopAllSessions,
   stopSession,
+  type Settings,
   type SessionView,
 } from './api'
-import { clear as clearTerminal, disposeAll, write as writeTerminal } from './terminal/manager'
+import { clear as clearTerminal, disposeAll, fit as fitTerminal, write as writeTerminal } from './terminal/manager'
 import { normalizeLocale, setLocale, type AppLocale } from './i18n'
 
 const { t } = useI18n()
@@ -34,8 +36,9 @@ const formVisible = ref(false)
 const editing = ref<SessionView | null>(null)
 
 // 后端会把它存的那份原样回给我们，包括我们不认识的字段，这里保持整份往回写。
-const settings = ref({ language: 'en', theme: 'light' })
+const settings = ref<Settings>({ language: 'en', theme: 'light', startOnBoot: false })
 const locale = ref<AppLocale>('en')
+const startOnBootBusy = ref(false)
 
 const elLocale = computed(() => (locale.value === 'zh-CN' ? elementZhCn : elementEn))
 
@@ -55,7 +58,8 @@ async function load() {
 async function loadSettings() {
   try {
     const stored = await getSettings()
-    settings.value = { language: stored.language, theme: stored.theme }
+    // 整份存下来，不挑字段 —— 挑漏了哪个，往回写的时候就会把那个字段抹成零值
+    settings.value = stored
     // 值为空串（文件里没写 / 后端没兜默认值）时回落到 en
     locale.value = normalizeLocale(stored.language)
     setLocale(locale.value)
@@ -68,10 +72,28 @@ async function changeLocale(value: AppLocale) {
   locale.value = value
   setLocale(value)
   try {
-    await saveSettings({ language: value, theme: settings.value.theme })
+    await saveSettings({ ...settings.value, language: value })
     settings.value.language = value
   } catch (error) {
     ElMessage.error(`${t('msg.settingFailed')}: ${String(error)}`)
+  }
+}
+
+// 开关的显示值直接读 settings，所以这里先乐观改一次、失败了再回滚 ——
+// 不然要等一次来回，手指点下去开关纹丝不动。
+// 后端 SetStartOnBoot 会同时写 settings.json 和注册表，前端不再调 saveSettings。
+async function toggleStartOnBoot(value: string | number | boolean) {
+  const next = value === true
+  const previous = settings.value.startOnBoot
+  settings.value.startOnBoot = next
+  startOnBootBusy.value = true
+  try {
+    await setStartOnBoot(next)
+  } catch (error) {
+    settings.value.startOnBoot = previous
+    ElMessage.error(`${t('msg.settingFailed')}: ${String(error)}`)
+  } finally {
+    startOnBootBusy.value = false
   }
 }
 
@@ -188,8 +210,10 @@ async function runAutoStart() {
 onMounted(async () => {
   unsubscribers = [
     onSessionOutput((payload) => writeTerminal(payload.id, payload.text)),
-    onSessionStarted(() => {
+    onSessionStarted((id) => {
       void load()
+      // ConPTY 是这一刻才建出来的 —— 之前 attach 时量到的那些尺寸它一句都收不到。
+      fitTerminal(id)
     }),
     onSessionExited((payload) => {
       writeTerminal(payload.id, `\r\n${t('term.exited', { code: payload.code })}\r\n`)
@@ -226,6 +250,18 @@ onBeforeUnmount(() => {
           <el-option label="English" value="en" />
           <el-option label="简体中文" value="zh-CN" />
         </el-select>
+
+        <el-tooltip :content="t('app.startOnBootHint')" placement="bottom">
+          <span class="start-on-boot">
+            <span>{{ t('app.startOnBoot') }}</span>
+            <el-switch
+              :model-value="settings.startOnBoot"
+              :loading="startOnBootBusy"
+              size="small"
+              @change="toggleStartOnBoot"
+            />
+          </span>
+        </el-tooltip>
 
         <el-button :icon="Refresh" size="small" @click="load">{{ t('app.refresh') }}</el-button>
         <el-button :icon="SwitchButton" size="small" @click="quit">{{ t('app.quit') }}</el-button>
@@ -346,6 +382,14 @@ onBeforeUnmount(() => {
 
 .locale {
   width: 120px;
+}
+
+.start-on-boot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .main {

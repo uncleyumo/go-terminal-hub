@@ -19,4 +19,5 @@ export interface DataStore {
 export interface Settings {
     "language": string;
     "theme": string;
+    "startOnBoot": boolean;
 }
