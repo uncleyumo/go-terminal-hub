@@ -101,7 +101,14 @@ func main() {
 
 	tray := app.SystemTray.New()
 	tray.SetTooltip("go-terminal-hub")
-	tray.AttachWindow(window)
+	tray.OnClick(func() {
+		if window.IsVisible() {
+			window.Hide()
+		} else {
+			window.Show()
+			window.Focus()
+		}
+	})
 
 	window.RegisterHook(
 		events.Common.WindowClosing,
