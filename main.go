@@ -45,6 +45,8 @@ func main() {
 
 	initLogger(*logLevel)
 
+	var window *application.WebviewWindow
+
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
 	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
@@ -66,6 +68,15 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "https://github.com/uncleyumo/go-terminal-hub",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				window.Show()
+			},
+			AdditionalData: nil,
+			ExitCode:       0,
+			EncryptionKey:  [32]byte{},
+		},
 	})
 
 	// Create a new window with the necessary options.
@@ -73,7 +84,7 @@ func main() {
 	// 'Mac' options tailor the window when running on macOS.
 	// 'BackgroundColour' is the background color of the window.
 	// 'URL' is the URL that will be loaded into the webview.
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "go-terminal-hub",
 		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
 		Width:  1000,
