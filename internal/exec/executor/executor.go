@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
 )
@@ -38,6 +40,11 @@ func BuildCommand(e Entry) (Command, error) {
 		return Command{}, errors.New("script formats other than bat / cmd / ps1 / exe / shell are not supported for the time being")
 	}
 
+	// abs path of cmd.exe
+	cmdExeAbsPath, cmdExeAbsPathErr := exec.LookPath("cmd.exe")
+	// abs path of powershell.exe
+	powershellExeAbsPath, powershellExeAbsPathErr := exec.LookPath("powershell.exe")
+
 	// 查看 Target 脚本是否存在
 	if _, err := os.Stat(e.Target); err != nil {
 		if e.Kind != "shell" {
@@ -48,6 +55,10 @@ func BuildCommand(e Entry) (Command, error) {
 	cmdLine := ""
 	switch e.Kind {
 	case "bat", "cmd":
+		if cmdExeAbsPathErr != nil {
+			slog.Info("cmd.exe not found", "err", cmdExeAbsPathErr)
+			return Command{}, errors.New("cmd.exe not found")
+		}
 		if e.Args == "" {
 			// example: cmd.exe /d /s /c ""C:\my tools\run.bat""
 			cmdLine = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\"\"", e.Target)
@@ -55,8 +66,12 @@ func BuildCommand(e Entry) (Command, error) {
 			// example: cmd.exe /d /s /c ""C:\my tools\run.bat" --fast"
 			cmdLine = fmt.Sprintf("cmd.exe /d /s /c \"\"%s\" %s\"", e.Target, e.Args)
 		}
-		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
+		return Command{Path: cmdExeAbsPath, CmdLine: cmdLine}, nil
 	case "ps1":
+		if powershellExeAbsPathErr != nil {
+			slog.Info("powershell.exe not found", "err", powershellExeAbsPathErr)
+			return Command{}, errors.New("powershell.exe not found")
+		}
 		args := ""
 		if e.Args == "" {
 			args = ""
@@ -65,8 +80,16 @@ func BuildCommand(e Entry) (Command, error) {
 		}
 		// example: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\my tools\run.ps1" --fast
 		cmdLine = fmt.Sprintf("powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%s\"%s", e.Target, args)
-		return Command{Path: "powershell.exe", CmdLine: cmdLine}, nil
+		return Command{Path: powershellExeAbsPath, CmdLine: cmdLine}, nil
 	case "exe":
+		if !filepath.IsAbs(e.Target) {
+			exeAbsPath, err := exec.LookPath(e.Target)
+			if err != nil {
+				slog.Info("target not found", "err", err)
+				return Command{}, errors.New("target not found")
+			}
+			e.Target = exeAbsPath
+		}
 		args := ""
 		if e.Args == "" {
 			args = ""
@@ -76,8 +99,12 @@ func BuildCommand(e Entry) (Command, error) {
 		cmdLine = fmt.Sprintf("\"%s\"%s", e.Target, args)
 		return Command{Path: e.Target, CmdLine: cmdLine}, nil
 	case "shell":
+		if cmdExeAbsPathErr != nil {
+			slog.Info("cmd.exe not found", "err", cmdExeAbsPathErr)
+			return Command{}, errors.New("cmd.exe not found")
+		}
 		cmdLine = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
-		return Command{Path: "cmd.exe", CmdLine: cmdLine}, nil
+		return Command{Path: cmdExeAbsPath, CmdLine: cmdLine}, nil
 	}
 	return Command{}, errors.New("unknown Kind")
 }
