@@ -39,6 +39,8 @@ func init() {
 func main() {
 
 	logLevel := flag.String("log-level", "info", "add use lowercase level to set log level, default is 'info'")
+	autostartBool := flag.Bool("autostart", false, "start the application on system startup (window hidden)")
+
 	flag.Parse()
 
 	initLogger(*logLevel)
@@ -82,6 +84,7 @@ func main() {
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
 		BackgroundColour: application.NewRGB(255, 255, 255),
+		Hidden:           *autostartBool,
 		URL:              "/",
 	})
 
