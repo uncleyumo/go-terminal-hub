@@ -33,12 +33,26 @@ const visible = computed({
 const isEdit = computed(() => props.session !== null)
 const title = computed(() => (isEdit.value ? t('form.editTitle') : t('form.createTitle')))
 
-const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell', 'terminal-cmd', 'terminal-powershell']
+const KINDS = [
+  'bat',
+  'cmd',
+  'ps1',
+  'exe',
+  'shell',
+  'terminal-cmd',
+  'terminal-shell',
+  'terminal-powershell',
+]
 
-// terminal-* 这两个是**后端认的类型**（executor.go 的 KindWhiteList 里有），
-// 命令行由后端按 kind 拼。这里的区别只在「target 可以不填」：
+// terminal-* 这几个是**后端认的类型**（executor.go 的 KindWhiteList 里有），
+// 命令行由后端按 kind 拼。共同点是「target 可以不填」：
 // 不填就是开一个空终端等你敲，填了就先跑它再停在提示符（cmd 的 /k、PowerShell 的 -NoExit）。
-const TERMINAL_KINDS = new Set(['terminal-cmd', 'terminal-powershell'])
+// 区别在 target 接什么：
+//   terminal-cmd        接**脚本路径**。后端在外面包一对引号，路径带空格才不会断，
+//                       所以填命令会被 cmd 去找一个叫「dir /b」的文件而失败。
+//   terminal-shell      接**命令**，原样丢给 cmd，不加引号。
+//   terminal-powershell 接**命令**，走 -Command。
+const TERMINAL_KINDS = new Set(['terminal-cmd', 'terminal-shell', 'terminal-powershell'])
 // log 模式后端还没做：internal/exec/hub/hub.go 的 switch 里 case "log" 直接
 // 返回 error，选了必然启动失败。先摆出来但禁掉，做完再放开（2026-09-28 学习者指出）
 const MODES = [
@@ -219,6 +233,7 @@ const namePlaceholder = computed(() =>
 )
 
 const targetPlaceholder = computed(() => {
+  if (form.kind === 'terminal-cmd') return t('form.targetCmdPathPlaceholder')
   if (isTerminal.value) return t('form.targetTerminalPlaceholder')
   return isShell.value ? t('form.targetShellPlaceholder') : t('form.targetPlaceholder')
 })
@@ -328,7 +343,7 @@ async function submit() {
         </UInput>
         <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
         <p v-else-if="isTerminal" class="mt-1 text-[11px] text-ink-faint">
-          {{ t('form.targetTerminalHint') }}
+          {{ form.kind === 'terminal-cmd' ? t('form.targetCmdPathHint') : t('form.targetTerminalHint') }}
         </p>
       </div>
 

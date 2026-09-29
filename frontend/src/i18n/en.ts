@@ -83,6 +83,8 @@ export default {
     targetShellPlaceholder: 'A whole cmd command line, not a file path',
     targetTerminalPlaceholder: 'Optional — a command to run first',
     targetTerminalHint: 'Leave empty for a plain terminal. Fill it in to run that first, then stay at the prompt.',
+    targetCmdPathPlaceholder: 'Optional — a script to run first',
+    targetCmdPathHint: 'Leave empty for a plain terminal. Only a full script path goes here, not a command — the path gets wrapped in quotes, so a command ends up looked up as a file name.',
     nameRequired: 'Name is required',
     targetRequired: 'Target is required',
   },
@@ -118,6 +120,7 @@ export default {
     exe: 'exe',
     shell: 'shell',
     'terminal-cmd': 'terminal(cmd)',
+    'terminal-shell': 'terminal(shell)',
     'terminal-powershell': 'terminal(powershell)',
   },
   mode: {

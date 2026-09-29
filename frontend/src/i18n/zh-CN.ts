@@ -83,6 +83,8 @@ export default {
     targetShellPlaceholder: '一整条 cmd 命令，不是文件路径',
     targetTerminalPlaceholder: '选填 —— 起来先跑这条命令',
     targetTerminalHint: '留空就是纯终端。填了就先跑这条，跑完停在提示符等你敲。',
+    targetCmdPathPlaceholder: '选填 —— 起来先跑这个脚本',
+    targetCmdPathHint: '留空就是纯终端。这里只能填脚本的完整路径，不能填命令 —— 后端会在外面加引号，命令会被当成文件名去找。',
     nameRequired: '名称必填',
     targetRequired: '目标必填',
   },
@@ -118,6 +120,7 @@ export default {
     exe: 'exe',
     shell: 'shell',
     'terminal-cmd': 'terminal(cmd)',
+    'terminal-shell': 'terminal(shell)',
     'terminal-powershell': 'terminal(powershell)',
   },
   mode: {
