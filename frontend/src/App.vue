@@ -97,6 +97,12 @@ const selected = computed(
   () => sessions.value.find((s) => s.config.id === selectedId.value) ?? null,
 )
 
+// 交给表单做重名检查。名称重复的话列表里两条长得一模一样，
+// 点哪条都分不清，启停就更没把握了。
+const takenNames = computed(() =>
+  sessions.value.map((s) => ({ id: s.config.id, name: s.config.name || s.config.id })),
+)
+
 // 切换会话时把配置折回去：下一条会话的展开状态默认一样，
 // 否则来回点两下，每次都得再点一次「详情」。
 function select(id: string) {
@@ -647,7 +653,7 @@ onBeforeUnmount(() => {
       </main>
     </div>
 
-    <SessionForm v-model="formVisible" :session="editing" @saved="load" />
+    <SessionForm v-model="formVisible" :session="editing" :taken-names="takenNames" @saved="load" />
     <UToaster />
     <UConfirmHost />
   </div>

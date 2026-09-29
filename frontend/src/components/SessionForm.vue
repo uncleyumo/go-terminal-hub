@@ -16,6 +16,9 @@ import { createSession, getAppWorkDir, updateSession, type DataStore, type Sessi
 const props = defineProps<{
   modelValue: boolean
   session: SessionView | null
+  /** 现存会话的 id + 名字。名称不许重复（学习者 2026-09-29 定的），
+   *  重名的话列表里两条长得一模一样，用户根本分不出点的是哪条。 */
+  takenNames?: Array<{ id: string; name: string }>
 }>()
 
 const emit = defineEmits<{
@@ -125,6 +128,10 @@ watch(visible, (open) => {
         }
       : blank(),
   )
+  // 新建：名字交给界面自动填，用户没动过就一直跟着 kind 变。
+  // 编辑：这个名字是人家的，一个字都不能碰，nameAuto 直接置 false。
+  nameAuto.value = !source
+  if (!source) fillAutoName()
   errors.name = ''
   errors.target = ''
   // 新建时把工作目录预填成 app 当前的目录（2026-09-28 学习者要的）：
@@ -144,40 +151,74 @@ const isShell = computed(() => form.kind === 'shell')
 // 常驻终端：target 是选填的，所以名字跟 shell 一样必填（下面 validate 认这个）
 const isTerminal = computed(() => TERMINAL_KINDS.has(form.kind))
 
-// —— 名称自动生成 ——
-// 格式「<名字>  (<创建时间>)」，例 xxx.exe  (2026-09-27 21:30)。
-// 名字和时间之间空两个，跟时间里的空格拉开距离，一眼看得出是两段。
-// 时间取生成这一刻，不是脚本文件自己的时间戳。
-function pad(n: number): string {
-  return String(n).padStart(2, '0')
+// —— 名称 ——
+// 统一格式「<kind>-<6 位哈希>」，例 bat-3f9a2c、terminal-cmd-8e14b0。
+// 学习者定的规则（2026-09-29）：默认名一律这个形状，且不允许重名。
+// 哈希的作用是让「同一种 kind 建了两条」能分得开 —— 光叫 bat-1 / bat-2
+// 还得记着自己建过几个，六位哈希不用数。
+const NAME_HASH_LEN = 6
+
+// FNV-1a 32 位。取十六进制前六位 —— 只为了一个短且稳定的编号，
+// 不是安全哈希，不用 SHA。
+function shortHash(input: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0').slice(0, NAME_HASH_LEN)
 }
 
-// target 可能是反斜杠的 Windows 路径，也可能是正斜杠，两种分隔符都要认。
-function scriptName(target: string): string {
-  const parts = target.split(/[\\/]/)
-  return parts[parts.length - 1] || target
+// 现在这个 name 还是不是界面自己填的？
+// 这是「切换 Kind 之后名字跟不跟着走」的全部依据：
+// 用户自己打的名字永远不动（nameAuto = false），自动填的跟着 kind 重算。
+// 早先没有这个标记，只看 name 空不空，于是自动填的那个名字跟用户打的
+// 名字长得一模一样，分不出来 —— 结果切了 Kind 名字还停在旧的那条上。
+const nameAuto = ref(true)
+
+const taken = computed(() => props.takenNames ?? [])
+
+/** 名字撞了没有。比对时忽略大小写和首尾空白，
+ *  否则「BAT-3F9A2C」和「bat-3f9a2c」在列表里几乎分不出来，却能各建一条。 */
+function nameTaken(candidate: string, ignoreId: string | null): boolean {
+  const key = candidate.trim().toLowerCase()
+  if (key === '') return false
+  return taken.value.some(
+    (entry) => entry.id !== ignoreId && entry.name.trim().toLowerCase() === key,
+  )
 }
 
 function autoName(): string {
-  const now = new Date()
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`
-  // 常驻终端的 target 可以是空的，空的时候没有文件名可取，拿类型当名字
-  const base = form.target.trim() === '' ? form.kind : scriptName(form.target)
-  return `${base}  (${date} ${time})`
+  // 带上时间戳和随机数：同一毫秒里连着建两条，kind 一样的话
+  // 光拿 kind 去哈希会撞出同一个名字。
+  const seed = `${form.kind}:${Date.now()}:${Math.random()}`
+  return `${form.kind}-${shortHash(seed)}`
 }
 
-// 名称还是空的就自动补上；绝不覆盖用户已经写下的名字。
-watch([() => form.target, () => form.kind], () => {
-  if (form.name.trim() !== '') return
-  // shell 和常驻终端的名字都是必填的，这里先把默认值填上，用户没改就直接用
-  if (isShell.value || isTerminal.value) {
-    form.name = autoName()
-    return
+// 自动生成的名字在撞名时重掷一次。还在撞就照原样返回 ——
+// 6 位十六进制有 1600 多万种，连着撞两次不可能，
+// 真撞了让用户在输入框里改个字就行，不在这儿跟他较劲。
+function uniqueAutoName(): string {
+  let name = autoName()
+  for (let i = 0; i < 5 && nameTaken(name, props.session?.config.id ?? null); i++) {
+    name = autoName()
   }
-  if (form.target.trim() === '') return
-  form.name = autoName()
-})
+  return name
+}
+
+function fillAutoName() {
+  form.name = uniqueAutoName()
+  nameAuto.value = true
+}
+
+// kind 变了、名字还是自动填的 → 重算，让前缀跟着新的 kind 走。
+// 用户打过的名字一个字都不动。
+watch(
+  () => form.kind,
+  () => {
+    if (nameAuto.value) fillAutoName()
+  },
+)
 
 // —— 文件选择框 ——
 // 走 @wailsio/runtime 的 Dialogs：它是 runtime 自带的 RPC 通道，不经 bindings，
@@ -269,13 +310,14 @@ function toDataStore(): DataStore {
 const saving = ref(false)
 
 function validate(): boolean {
-  // 兜底：用户手打了路径、没走「浏览」按钮，名称一直是空的。
-  if (!isShell.value && form.name.trim() === '' && form.target.trim() !== '') {
-    form.name = autoName()
-  }
-  // shell 和常驻终端的 target 都是命令、可以留空，所以名字必填（跟脚本类反过来）
+  // 名字：空、重名，都不让存。重名比对时把自己排除掉 ——
+  // 编辑一条会话时它自己就躺在 takenNames 里，不排除的话永远重名。
   errors.name =
-    (isShell.value || isTerminal.value) && form.name.trim() === '' ? t('form.nameRequired') : ''
+    form.name.trim() === ''
+      ? t('form.nameRequired')
+      : nameTaken(form.name, props.session?.config.id ?? null)
+        ? t('form.nameTaken', { name: form.name.trim() })
+        : ''
   errors.target =
     !isTerminal.value && form.target.trim() === '' ? t('form.targetRequired') : ''
   return !errors.name && !errors.target
@@ -312,12 +354,13 @@ async function submit() {
       <div>
         <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
           {{ t('form.name') }}
-          <span v-if="isShell" class="text-neg">*</span>
+          <span class="text-neg">*</span>
         </label>
         <UInput
           v-model="form.name"
           :placeholder="namePlaceholder"
           :invalid="!!errors.name"
+          @input="nameAuto = false"
           @enter="submit"
         />
         <p v-if="errors.name" class="mt-1 text-[11px] text-neg">{{ errors.name }}</p>

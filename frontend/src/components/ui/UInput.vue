@@ -16,6 +16,9 @@ withDefaults(
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  /** 用户自己敲了。跟 update:modelValue 分开发：v-model 那条是「值变了」，
+   *  这条是「人动了手」—— 名字那一栏靠它区分自动填的和手打的。 */
+  input: []
   enter: []
 }>()
 </script>
@@ -34,7 +37,10 @@ const emit = defineEmits<{
       autocomplete="off"
       class="min-w-0 flex-1 bg-transparent px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-faint disabled:opacity-50"
       :class="mono && 'font-mono text-xs'"
-      @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @input="
+        emit('update:modelValue', ($event.target as HTMLInputElement).value);
+        emit('input')
+      "
       @keydown.enter="emit('enter')"
     />
     <!-- 附加区不跟输入框抢焦点：里面的按钮自己管。
