@@ -41,7 +41,7 @@ task runtime"），所以**不用另外装 `task`**。
 | `Taskfile.yml` | 构建入口，只做平台分发 | 基本不动 |
 | `build/config.yml` | 应用元信息（公司 / 产品名 / 版本）+ dev 模式配置 | M5 要改 |
 | `build/windows/` | Windows 专用：`icon.ico`、`info.json`、`wails.exe.manifest`、nsis / msix 打包脚本 | M5 看 |
-| `build/appicon.png` | 图标源图，`generate:icons` 由它生成 `.ico` / `.icns` | M5 换 |
+| `build/appicon.png` | 图标源图，`generate:icons` 由它生成 `build/windows/icon.ico` | M5 换 |
 | `frontend/` | Vue 3 + TypeScript + Vite | 要改 |
 | `frontend/src/App.vue` | 前端根组件 | 要改 |
 | `frontend/bindings/` | **生成物**，Go service 的 TS 镜像 | 别手改 |
@@ -229,12 +229,12 @@ v2 的 `-platform` / `-webview2` / `-o` / `-clean` 全部作废。
 5. **`CGO_ENABLED` 保持 0** —— `build/windows/Taskfile.yml` 的默认值就是 0，产物是单文件。
    本机有 32 位 MinGW，Go 会默认 `CGO_ENABLED=1`；开着的后果是本项目**用不了 `-race`**。
    已在 2026-09-27 实测结案：产物里查不到任何 MinGW 运行时 DLL。
-6. **exe 里的版本资源「在，但解析不出来」** —— `build/windows/info.json` 写着 0.2.0，
+6. **exe 里的版本资源「在，但解析不出来」** —— `build/windows/info.json` 写着当前版本号，
    `generate:syso` 也确实把 `VS_VERSION_INFO` 块写进去了（exe 里能查到 UTF-16 的
-   `ProductVersion` / `0.2.0`，`version.dll` 的 `GetFileVersionInfoSize` 返回 1484 字节）。
+   `ProductVersion`，`version.dll` 的 `GetFileVersionInfoSize` 返回 1484 字节）。
    但 PowerShell 读 `.VersionInfo` 时**连 `ProductName`、`CompanyName` 这些纯字符串都是空的**，
    整个块解析不出来。**这不是「没嵌进去」，是「嵌了但读不出」。**
-   ⚠️ 试过把版本号写成四段 `0.2.0.0`（Windows 固定版本信息要四段），**没用**。
+   ⚠️ 试过把版本号写成四段 `0.3.0.0`（Windows 固定版本信息要四段），**没用**。
    已知未修，不影响运行——**别再往这个方向试**，方向是错的。
 
 技术依据在教程仓库的 `ARCHITECTURE.md`。

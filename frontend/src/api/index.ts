@@ -6,11 +6,19 @@ import type { Settings } from '../../bindings/github.com/uncleyumo/go-terminal-h
 import type { RecordStatus } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/hub/models'
 import type { ExitPayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
 import type { OutputPayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
+import type { BuildInfo } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/buildinfo/models'
 
 // 绑定是生成物，形状会跟着生成参数变：
 // Taskfile 里统一带 -i（生成 interface，不是 class），返回值一律可空。
 // 所以这里只用类型、只用对象字面量，不 new、不假设非空。
-export type { DataStore, Settings, RecordStatus, OutputPayload, ExitPayload }
+export type { DataStore, Settings, RecordStatus, OutputPayload, ExitPayload, BuildInfo }
+
+// —— 应用信息：版本号 + 构建时间 ——
+// 这两个值是链接器在 go build 时用 -X 写进 Go 包级变量的（见 build/windows/Taskfile.yml），
+// 不是运行时算的，所以「现在几点」对它没意义 —— 它记的是这个 exe 是几点编出来的。
+export function getBuildInfo(): Promise<BuildInfo> {
+  return AppService.GetBuildInfo()
+}
 
 // 一行会话 = 配置（store，跨重启活着）+ 运行状态（hub，只在内存）。
 // 没有 status 的意思是「这条配置从没跑过」，是正常状态，不是异常。

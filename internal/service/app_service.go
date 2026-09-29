@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/uncleyumo/go-terminal-hub/internal/buildinfo"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
@@ -129,4 +130,8 @@ func (a *AppService) OpenScriptDir(id string) error {
 		_ = cmd.Wait()
 	}()
 	return nil
+}
+
+func (a *AppService) GetBuildInfo() buildinfo.BuildInfo {
+	return buildinfo.Info()
 }

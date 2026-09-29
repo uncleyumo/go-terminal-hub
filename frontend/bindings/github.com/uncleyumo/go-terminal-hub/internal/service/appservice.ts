@@ -5,8 +5,16 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as buildinfo$0 from "../buildinfo/models.js";
+
 export function GetAppWorkDir(): $CancellablePromise<string> {
     return $Call.ByID(166898860);
+}
+
+export function GetBuildInfo(): $CancellablePromise<buildinfo$0.BuildInfo> {
+    return $Call.ByID(2047417435);
 }
 
 export function GetStartOnBootStatus(): $CancellablePromise<boolean> {

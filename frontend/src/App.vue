@@ -5,6 +5,7 @@ import SessionList from './components/SessionList.vue'
 import SessionForm from './components/SessionForm.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import TermBackgroundDialog from './components/TermBackgroundDialog.vue'
+import AppInfoDialog from './components/AppInfoDialog.vue'
 import UButton from './components/ui/UButton.vue'
 import UConfirmHost from './components/ui/UConfirmHost.vue'
 import UDialog from './components/ui/UDialog.vue'
@@ -71,6 +72,7 @@ const refreshing = ref(false)
 // 色板小窗（会话级 + 全局级，两个实例）+ 「最终命令」那一条命令行的只读小窗
 const colorDialogOpen = ref(false)
 const appColorOpen = ref(false)
+const appInfoOpen = ref(false)
 const commandLineOpen = ref(false)
 const commandLine = ref('')
 
@@ -665,6 +667,19 @@ onBeforeUnmount(() => {
 
       <div class="mx-0.5 h-5 w-px bg-line"></div>
 
+      <!-- 「关于这个 app」跟仓库链接归成一组：两个都是「关于这个程序本身」，
+           不是「操作 app」。组内从左到右是「看信息 → 去看源码」 -->
+      <UTooltip :content="t('app.info')">
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="info"
+          :aria-label="t('app.info')"
+          @click="appInfoOpen = true"
+        />
+      </UTooltip>
+
       <!-- 仓库链接排在最右、单独隔一条线：它是「离开这个 app」的动作，
            跟左边那排操作 app 的按钮不是一类，混在里面用户会当成某个设置 -->
       <UTooltip :content="t('app.repository')">
@@ -913,5 +928,6 @@ onBeforeUnmount(() => {
         </UButton>
       </template>
     </UDialog>
+    <AppInfoDialog v-model="appInfoOpen" />
   </div>
 </template>

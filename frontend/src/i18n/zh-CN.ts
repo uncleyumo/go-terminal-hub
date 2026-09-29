@@ -15,6 +15,16 @@ export default {
     searchClear: '清空搜索',
     hideSessions: '收起会话列表',
     showSessions: '展开会话列表',
+    // 「关于」弹窗
+    info: '应用信息',
+    infoTitle: '应用信息',
+    infoTagline: '把脚本和命令行程序集中管起来的终端会话管理器',
+    infoVersion: '版本',
+    infoBuildTime: '构建时间',
+    infoAuthor: '开发者',
+    infoContact: '联系方式',
+    infoWrite: '用邮件联系',
+    infoFailed: '读不到版本信息（后端没绑上）',
     repository: '打开 GitHub 仓库',
   },
   theme: {

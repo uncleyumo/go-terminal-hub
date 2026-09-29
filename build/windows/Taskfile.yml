@@ -14,6 +14,41 @@ vars:
   # Docker image for cross-compilation with CGO (used when CGO_ENABLED=1 on non-Windows)
   CROSS_IMAGE: wails-cross
 
+  # ---- 链接器注入的版本号和构建时间 ----------------------------------------
+  # 只有 APP_VERSION / BUILD_TIME 放顶层（sh 命令只有在这里求值得出来），
+  # 拼 -ldflags 字符串的 APP_INFO_LDFLAGS 放在 build:native 自己的 vars 里 ——
+  # 顶层 var 里再引用别的顶层动态 var 会展开成空串（2026-09-29 实测，绕了两轮）。
+  #
+  # 链接器把这两个值写进 binary 里的包级字符串变量（internal/buildinfo）。
+  # 变量全名 = 导入路径 + 变量名，少写包名会报
+  # "-X flag requires argument of the form importpath.name=value"（实测）。
+  # ⚠️ 注入目标的名字跟 buildinfo.go 里的**逐字对得上**——version / buildTime 都是小写开头。
+  # 链接器按符号名找，写错大小写不报错，只是静默不替换。
+  # ⚠️ 值里绝不能有空格 —— 整条 -ldflags 外面只有一层双引号，
+  # 值里的空格会被 sh 拆成两个参数。ISO 格式的日期时间正好没有空格。
+  # ⚠️ 以后开 OBFUSCATED 走 garble 时要重测：garble 会重命名变量，
+  # -X 按名字找符号，可能就找不到了。本项目没用过 OBFUSCATED。
+  #
+  # 版本号唯一真源是 build/config.yml 的 info.version —— 本项目自己的字段，
+  # 顶层的 version: '3' 是 Taskfile 格式版本号，靠「两空格缩进」区分开。
+  #
+  # 路径怎么写（2026-09-29 实测，之前搞错过两轮）：
+  #   sh 命令的工作目录 = 项目根，也就是 ROOT_DIR，不是本文件所在的 build/windows/。
+  #   所以相对路径要从项目根起算，`../config.yml` 找不到东西。
+  # ⚠️ `wails3 task -dir <别的目录>` 会把 ROOT_DIR 一起改掉，那时这里会失效。
+  # 日常用法都是从项目根跑，不受影响；要彻底稳，得换成 TASKFILE_DIR 起算。
+  #
+  # 只能靠管道，不能用 `<<< "$( ... )"` 那种写法：实测那种写法在本机 go-task 的
+  # sh 里 grep 不到东西，静默交出空串。管道版是实测能出值的。
+  # 引号一律用双引号——单引号在 Taskfile 的 YAML 里既要写两遍（'' 转义），
+  # 又不保证传下去还是引号。
+  # tr -d "\r"：Windows 上输出带 CRLF，不去掉版本号尾巴上会多个 ^M。
+  APP_VERSION:
+    sh: 'grep -E "^  version:" "{{.ROOT_DIR}}/build/config.yml" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | tr -d "\r"'
+  # 编译那一刻的本地时间。跟 git 提交时间无关 —— 你改完没 commit 也照样变。
+  BUILD_TIME:
+    sh: 'date +%Y-%m-%dT%H:%M:%S%z'
+
 tasks:
   build:
     summary: Builds the application for Windows
@@ -47,6 +82,11 @@ tasks:
     preconditions:
       - sh: '{{if eq .OBFUSCATED "true"}}command -v garble >/dev/null 2>&1{{else}}true{{end}}'
         msg: "garble is required for obfuscated builds. Install it with: go install mvdan.cc/garble@v0.16.0 (requires Go 1.24+). See https://github.com/burrowers/garble/releases for version/toolchain compatibility."
+      # APP_VERSION 是 grep 出来的：grep 失败时 go-task 只会交出一个空串，而链接器
+      # -X 一个空串编译照样过（实测）—— 产物里版本号会变成空字符串，谁都不会发现。
+      # 所以这里显式拦一道。
+      - sh: 'echo "{{.APP_VERSION}}" | grep -qE "[0-9]"'
+        msg: "build/config.yml 里没读到 info.version。版本号只在那一处改，改坏了这里会直接停。"
     cmds:
       - task: generate:syso
         vars:
@@ -57,7 +97,13 @@ tasks:
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      # APP_INFO_LDFLAGS 放在**这个 task 的** vars 里，不是顶层：顶层 var 里再引用
+      # 别的顶层动态 var，展开时会拿到空串（2026-09-29 实测，两层嵌套必空）。
+      # APP_VERSION / BUILD_TIME 保持顶层（sh 命令在顶层才求值得出来），这里只拼串。
+      APP_INFO_LDFLAGS: '-X github.com/uncleyumo/go-terminal-hub/internal/buildinfo.version={{.APP_VERSION}} -X github.com/uncleyumo/go-terminal-hub/internal/buildinfo.buildTime={{.BUILD_TIME}}'
+      # ⚠️ 两条 BUILD_FLAGS 分支都得带上 APP_INFO_LDFLAGS：dev 那条原本**根本没有**
+      # -ldflags，漏了的话 wails3 dev 起的 app 弹窗里显示 dev / unknown。
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l" -ldflags="{{.APP_INFO_LDFLAGS}}"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui {{.APP_INFO_LDFLAGS}}"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
