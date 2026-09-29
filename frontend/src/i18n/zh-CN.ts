@@ -13,6 +13,8 @@ export default {
     search: '搜索会话',
     searchPlaceholder: '搜索会话…',
     searchClear: '清空搜索',
+    hideSessions: '收起会话列表',
+    showSessions: '展开会话列表',
   },
   theme: {
     label: '主题',

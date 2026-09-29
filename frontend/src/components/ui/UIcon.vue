@@ -63,6 +63,9 @@ const PATHS: Record<string, string[]> = {
   monitor: ['M3.5 5.5h17v11h-17z', 'M9 20.5h6', 'M12 16.5v4'],
   // 「登录时启动」：一道箭头进门，Windows 自己的说法是 sign in
   login: ['M14.5 3.5h4a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-4', 'M9.5 17.5 14.5 12 9.5 6.5', 'M14.5 12h-11'],
+  // 会话栏的收起/展开：一块框加一道竖线，竖线在哪边就是往哪边让
+  panelLeft: ['M3.5 4.5h17v15h-17z', 'M9.5 4.5v15'],
+  panelRight: ['M3.5 4.5h17v15h-17z', 'M14.5 4.5v15'],
 }
 
 const props = withDefaults(

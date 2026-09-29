@@ -12,6 +12,7 @@ import USwitch from './ui/USwitch.vue'
 import UTextarea from './ui/UTextarea.vue'
 import { notify } from './ui/toast'
 import { createSession, getAppWorkDir, updateSession, type DataStore, type SessionView } from '../api'
+import { isTerminalKind, resolveKind, TERMINAL_TARGETS } from '../sessionKind'
 
 const props = defineProps<{
   modelValue: boolean
@@ -35,14 +36,9 @@ const title = computed(() => (isEdit.value ? t('form.editTitle') : t('form.creat
 
 const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell', 'terminal-cmd', 'terminal-powershell']
 
-// terminal-* 这两个**只存在于前端**：后端的白名单不认它们（executor.go:36），
+// terminal-* 这两个**只存在于前端**：后端的白名单不认它们，
 // 提交时在 toDataStore() 里翻译成 kind=shell + 拼好的 target（D39，后端零改动）。
-// target 的值就是「起一个常驻 shell」的那条命令 —— /k 的意思是执行完不退出，
-// PowerShell 不带 -Command 也是同一个效果。
-const TERMINAL_TARGETS: Record<string, string> = {
-  'terminal-cmd': 'cmd.exe /k',
-  'terminal-powershell': 'powershell.exe -NoLogo -NoProfile',
-}
+// 定义和「怎么反着还原」都在 sessionKind.ts，列表和详情读的是同一份。
 // log 模式后端还没做：internal/exec/hub/hub.go 的 switch 里 case "log" 直接
 // 返回 error，选了必然启动失败。先摆出来但禁掉，做完再放开（2026-09-28 学习者指出）
 const MODES = [
@@ -102,7 +98,10 @@ watch(visible, (open) => {
       ? {
           id: source.id,
           name: source.name,
-          kind: source.kind,
+          // 存的是 shell + 预设 target，还原成 terminal-cmd / terminal-powershell：
+          // 不还原的话，编辑一条常驻终端会看到「shell」被选中，target 框里躺着一整条
+          // 命令 —— 用户不知道那是界面替他填的，多半会当成普通 shell 给改掉。
+          kind: resolveKind(source.kind, source.target),
           target: source.target,
           args: source.args,
           workDir: source.workDir,
@@ -132,7 +131,7 @@ watch(visible, (open) => {
 // 所以名称只在 shell 下必填；其余 kind 留空由下面自动生成。
 const isShell = computed(() => form.kind === 'shell')
 // 常驻终端：既不用 target 也不用 args（那条命令前端已经拼好了）
-const isTerminal = computed(() => TERMINAL_TARGETS[form.kind] !== undefined)
+const isTerminal = computed(() => isTerminalKind(form.kind))
 
 // —— 名称自动生成 ——
 // 格式「<名字>  (<创建时间>)」，例 xxx.exe  (2026-09-27 21:30)。

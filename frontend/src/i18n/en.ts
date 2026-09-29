@@ -13,6 +13,8 @@ export default {
     search: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
     searchClear: 'Clear search',
+    hideSessions: 'Collapse the session list',
+    showSessions: 'Expand the session list',
   },
   theme: {
     label: 'Theme',

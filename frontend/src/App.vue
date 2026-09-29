@@ -38,6 +38,8 @@ import {
 } from './terminal/manager'
 import { normalizeLocale, setLocale, type AppLocale } from './i18n'
 import { applyTheme, normalizeTheme, watchSystemTheme, type ThemeMode } from './theme'
+import { resolveKind } from './sessionKind'
+import brandIcon from './assets/brand/icon.svg'
 
 const { t } = useI18n()
 
@@ -54,6 +56,31 @@ const locale = ref<AppLocale>('en')
 const themeMode = ref<ThemeMode>('system')
 const startOnBootBusy = ref(false)
 const refreshing = ref(false)
+
+// —— 会话栏折叠 ——
+// 收起时把整条 268px 让给终端：搜索框一起收（它筛的就是这份列表，列表没了它也没用）。
+// 状态存本地，这样「收起」是下次打开还在，而不是每次都要重按一遍。
+// 终端那边不用管宽度变了怎么办：TerminalPane 上的 ResizeObserver 会重新量（manager.ts）。
+const SIDEBAR_KEY = 'hub.sidebar.collapsed'
+const sidebarCollapsed = ref(readSidebarCollapsed())
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_KEY) === '1'
+  } catch {
+    // 隐私模式之类的地方 localStorage 会抛。不存就是了，默认展开。
+    return false
+  }
+}
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  try {
+    window.localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? '1' : '0')
+  } catch {
+    // 存不进去只是下次不记住，折叠本身照样能用
+  }
+}
 
 const localeOptions = [
   { value: 'en', label: 'English', icon: 'globe' },
@@ -338,10 +365,28 @@ onBeforeUnmount(() => {
            同样的 w-[268px] + px-3，灰底那一层再 flex-1 填满剩下的。
            之前写死 w-[244px] / w-[248px] 都是拿 268 减 px-3 算的，
            减来减去跟它对不上（2026-09-28 学习者两次指出没对齐）。
-           这样写就**没有可算错的数**——px-3 解析成多少，两边都一样。 -->
-      <div class="flex w-[268px] flex-none items-center px-3">
+           这样写就**没有可算错的数**——px-3 解析成多少，两边都一样。
+           折叠按钮加在这个盒子**里面**、搜索框左边：盒子本身还是 268px，
+           下面 SESSIONS 那栏的对齐关系一点没动。 -->
+      <div
+        class="flex flex-none items-center gap-1 transition-[width] duration-200 ease-out"
+        :class="sidebarCollapsed ? 'w-9 pl-1.5' : 'w-[268px] px-3'"
+      >
+        <UTooltip :content="t(sidebarCollapsed ? 'app.showSessions' : 'app.hideSessions')">
+          <UButton
+            variant="ghost"
+            size="sm"
+            square
+            :icon="sidebarCollapsed ? 'panelRight' : 'panelLeft'"
+            :aria-label="t(sidebarCollapsed ? 'app.showSessions' : 'app.hideSessions')"
+            :aria-expanded="!sidebarCollapsed"
+            @click="toggleSidebar"
+          />
+        </UTooltip>
+
         <div
-          class="flex flex-1 items-center gap-2 rounded-lg border border-transparent bg-sunken px-2 transition-colors duration-100 focus-within:border-accent"
+          v-if="!sidebarCollapsed"
+          class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-sunken px-2 transition-colors duration-100 focus-within:border-accent"
         >
           <UIcon name="search" :size="14" class="flex-none text-ink-faint" />
           <input
@@ -425,8 +470,12 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="flex min-h-0 flex-1">
-      <!-- 左：会话列表 -->
-      <aside class="w-[268px] flex-none border-r border-line">
+      <!-- 左：会话列表。收起时宽度归零而不是 display:none ——
+           过渡才有东西可过渡，display:none 是瞬间消失，终端会「跳」一下。 -->
+      <aside
+        class="flex-none overflow-hidden border-r border-line transition-[width] duration-200 ease-out"
+        :class="sidebarCollapsed ? 'w-0 border-r-0' : 'w-[268px]'"
+      >
         <SessionList
           :sessions="sessions"
           :selected-id="selectedId"
@@ -445,11 +494,7 @@ onBeforeUnmount(() => {
         <template v-if="!selected">
           <!-- 空状态要教会用户这里能干什么，不是只说一句「没选中」 -->
           <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-            <span
-              class="flex h-11 w-11 items-center justify-center rounded-xl bg-raised text-ink-faint"
-            >
-              <UIcon name="terminal" :size="20" />
-            </span>
+            <img :src="brandIcon" alt="" width="44" height="44" class="h-11 w-11" />
             <p class="text-[13px] text-ink-dim">{{ t('detail.emptyTitle') }}</p>
             <p class="max-w-[320px] text-center text-[11px] leading-relaxed text-ink-faint">
               {{ t('detail.emptyHint') }}
@@ -543,7 +588,9 @@ onBeforeUnmount(() => {
               <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
                 {{ t('detail.kind') }}
               </div>
-              <div class="mt-0.5 font-mono text-xs text-ink">{{ selected.config.kind }}</div>
+              <div class="mt-0.5 font-mono text-xs text-ink">
+                {{ t(`kind.${resolveKind(selected.config.kind, selected.config.target)}`) }}
+              </div>
             </div>
             <div>
               <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">

@@ -5,6 +5,7 @@ import UButton from './ui/UButton.vue'
 import UIcon from './ui/UIcon.vue'
 import UTooltip from './ui/UTooltip.vue'
 import type { SessionView } from '../api'
+import { resolveKind } from '../sessionKind'
 
 const props = defineProps<{
   sessions: SessionView[]
@@ -37,6 +38,12 @@ function label(session: SessionView): string {
   const name = session.config.name || session.config.id
   // 状态不能只靠那颗点传达（读屏看不见颜色），所以进 aria-label
   return session.running ? `${name} · ${t('list.running')}` : name
+}
+
+// 存的是 kind=shell，界面上要显示 terminal(cmd) / terminal(powershell)。
+// 不还原的话两种常驻终端在列表里长得一模一样，用户分不出自己建的是哪个。
+function kindLabel(session: SessionView): string {
+  return t(`kind.${resolveKind(session.config.kind, session.config.target)}`)
 }
 </script>
 
@@ -94,7 +101,7 @@ function label(session: SessionView): string {
             {{ session.config.name || session.config.id }}
           </span>
           <span class="mt-0.5 flex items-center gap-1 text-[10.5px] leading-4 text-ink-faint">
-            <span class="font-mono">{{ session.config.kind }}</span>
+            <span class="font-mono">{{ kindLabel(session) }}</span>
             <template v-if="!session.running && session.status">
               <span>·</span>
               <span class="tabular-nums">
