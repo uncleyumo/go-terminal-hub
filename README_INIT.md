@@ -20,12 +20,14 @@ wails3 <子命令>          第 1 层  CLI。自己不做活，只负责调 Task
 **wails3 CLI 内嵌了 go-task 运行时**（`internal/commands/task.go` 原文 "fall through to the embedded
 task runtime"），所以**不用另外装 `task`**。
 
-根 `Taskfile.yml` 只做分发：`build` → `{{.GOOS}}:build` → `build/windows/Taskfile.yml`。
-公共步骤在 `build/Taskfile.yml`（include 名 `common`），平台相关的在 `build/<平台>/Taskfile.yml`。
+根 `Taskfile.yml` 的 `build` → `windows:build` → `build/windows/Taskfile.yml`。
+公共步骤在 `build/Taskfile.yml`（include 名 `common`）。
 
-> 根 Taskfile 的 `includes:` **无条件列出了全部六个平台**（common / windows / darwin / linux / ios / android）。
-> 所以 `build/darwin/`、`build/android/`、`build/ios/` 这些目录**不能删、也不能整个 gitignore 掉**——
-> 缺任何一个文件，`task` 加载就失败，Windows 构建会跟着一起跑不起来。
+> **只有 Windows 一条路。** 2026-09-29 归档时把 Wails 模板自带的 `build/darwin/`、
+> `build/linux/`、`build/ios/`、`build/android/`、`build/docker/` 连同各自的 Taskfile 一起删了，
+> `includes:` 也只剩 `common` 和 `windows`。
+> 加回别的平台：从 git 历史取回对应目录，再把 include 和 `build` / `package` / `run`
+> 的分发目标加回来——`includes:` 少一个文件，`task` 加载就整体失败，Windows 构建跟着跑不起来。
 
 ---
 
@@ -34,7 +36,7 @@ task runtime"），所以**不用另外装 `task`**。
 | 路径 | 是什么 | 动不动 |
 |---|---|---|
 | `main.go` | 入口。建 app、建窗口、注册 service、`app.Run()` | 要改 |
-| `internal/service/greetservice.go` | 模板自带的示例 service（一个 `Greet` 方法） | 会被换成 Executor / Session |
+| `internal/service/` | 对外的三个 service：`StoreService`（配置）/ `HubService`（启停）/ `AppService`（杂项） | 要改 |
 | `go.mod` / `go.sum` | Go 依赖。**已锁 `wails/v3 v3.0.0-beta.23`** | 加依赖时自动改 |
 | `Taskfile.yml` | 构建入口，只做平台分发 | 基本不动 |
 | `build/config.yml` | 应用元信息（公司 / 产品名 / 版本）+ dev 模式配置 | M5 要改 |
@@ -58,8 +60,9 @@ task runtime"），所以**不用另外装 `task`**。
 │                                                        │
 │   Go 侧（你的代码）              WebView2 侧（前端）    │
 │   ┌───────────────┐             ┌───────────────┐     │
-│   │ GreetService  │◄──bindings─►│  Vue + TS     │     │
-│   │ Executor ...  │             │  xterm.js     │     │
+│   │ StoreService  │◄──bindings─►│  Vue + TS     │     │
+│   │ HubService    │             │  xterm.js     │     │
+│   │ AppService    │             │               │     │
 │   └───────┬───────┘             └───────┬───────┘     │
 │           │        ◄──events──►         │             │
 │           ▼                             ▼             │
@@ -91,14 +94,15 @@ var assets embed.FS
 Go 侧把结构体注册成 service：
 
 ```go
-application.NewService(&GreetService{})
+application.NewService(&service.StoreService{})
 ```
 
 `wails3 generate bindings` 扫这些 service 的**导出方法**，生成 TS 代码到 `frontend/bindings/`。
+方法名首字母小写的**不会被绑定**——Wails 只认导出的。改完 Go 侧记得重跑一次生成。
 前端 import 后就能像调本地函数一样调 Go：
 
 ```ts
-const result = await GreetService.Greet("world")
+const sessions = await StoreService.ListSessions()
 ```
 
 **events（Go 推前端）**
@@ -222,7 +226,12 @@ v2 的 `-platform` / `-webview2` / `-o` / `-clean` 全部作废。
 3. **起会话后要立刻 `Resize`** —— go-pty 的 `New()` 写死 80×25
 4. **停止时"先排干再关"** —— `Wait()` 返回不等于输出读完；解法是只关会话、等 `io.EOF`，
    **绝不调 `p.Close()`**（会 `0xc0000374` 堆损坏）
-5. **`CGO_ENABLED=1` 会不会破坏"单文件 exe"** —— 待 M5 用 `dumpbin /dependents` 验
+5. **`CGO_ENABLED` 保持 0** —— `build/windows/Taskfile.yml` 的默认值就是 0，产物是单文件。
+   本机有 32 位 MinGW，Go 会默认 `CGO_ENABLED=1`；开着的后果是本项目**用不了 `-race`**。
+   已在 2026-09-27 实测结案：产物里查不到任何 MinGW 运行时 DLL。
+6. **exe 属性里的版本号是空的** —— `build/windows/info.json` 写着 0.2.0，但
+   `generate:syso` 那步没把版本资源嵌进去，`ProductVersion` 读出来是空串。
+   已知未修，不影响运行。
 
 技术依据在教程仓库的 `ARCHITECTURE.md`。
 

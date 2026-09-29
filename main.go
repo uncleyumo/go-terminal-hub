@@ -57,8 +57,6 @@ func main() {
 		Name:        "go-terminal-hub",
 		Description: "Manage scripts and CLI programs as terminal sessions from one window",
 		Services: []application.Service{
-			application.NewService(&service.GreetService{}),
-			application.NewService(&service.XtermDemoService{}),
 			application.NewService(&service.StoreService{}),
 			application.NewService(&service.HubService{}),
 			application.NewService(&service.AppService{}),

@@ -62,6 +62,7 @@ type fakeExecutor struct {
 	autoExit   bool
 	onStop     func() // StopProcess() 被调时干什么
 	onKill     func() // KillProcess() 被调时干什么
+	spec       executor.LaunchSpec
 }
 
 // newFakeExecutor 造一个跑完就走的假进程：Start 后吐 chunks，并自动报退出码。
@@ -89,6 +90,7 @@ func (f *fakeExecutor) Start(spec executor.LaunchSpec) error {
 	if f.startErr != nil {
 		return f.startErr
 	}
+	f.spec = spec
 	go func() {
 		for _, c := range f.chunks {
 			f.outCh <- c
@@ -140,6 +142,10 @@ func (f *fakeExecutor) CloseTerminal() error {
 	}
 	return nil
 }
+
+// GetLaunchSpec 照着 Start 存下来的那份返回，没起过就返回零值。
+// 真实现（conpty_windows.go）返回的是 Start 时的快照，不是重新拼的——这里跟着一样。
+func (f *fakeExecutor) GetLaunchSpec() executor.LaunchSpec { return f.spec }
 
 var _ executor.Executor = (*fakeExecutor)(nil)
 

@@ -5,34 +5,31 @@ vars:
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
-  # Target OS for build/package/run. Defaults to the host OS, and is overridden
-  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
-  # tasks below dispatch to the matching platform Taskfile via this variable.
+  # 这个仓库只做 Windows 桌面应用。Wails 模板原本还带 darwin / linux / ios / android
+  # 四套脚手架，2026-09-29 连同它们各自的 Taskfile 一起删了，所以下面的 build /
+  # package / run 直接指 windows:，不再按 GOOS 分发。
+  # GOOS 这个变量本身留着：dist 用它拼产物文件名（go-terminal-hub_windows_amd64.exe）。
+  # 真要加回别的平台，从 git 历史里取回对应目录，再把 includes 和这几处分发加回来。
   GOOS: '{{.GOOS | default OS}}'
 
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
-  darwin: ./build/darwin/Taskfile.yml
-  linux: ./build/linux/Taskfile.yml
-  ios: ./build/ios/Taskfile.yml
-  android: ./build/android/Taskfile.yml
 
 tasks:
   build:
     summary: Builds the application
     cmds:
-      - task: "{{.GOOS}}:build"
+      - task: windows:build
 
   package:
     summary: Packages a production build of the application
     cmds:
-      - task: "{{.GOOS}}:package"
+      - task: windows:package
 
   dist:
     summary: Builds a distributable binary whose filename carries its target platform
     # 产物落在 dist/，文件名形如 go-terminal-hub_windows_amd64.exe。
-    # 换平台：wails3 task dist GOOS=linux ARCH=arm64
     #
     # 为什么是「先构建再拷贝」而不是让 go build 直接输出到 dist/：
     # BIN_DIR / APP_NAME 是全局变量，从这里 handover 给内层 build:native 不生效，
@@ -43,19 +40,13 @@ tasks:
       DIST_NAME: '{{.APP_NAME}}_{{.DIST_OS}}_{{.DIST_ARCH}}'
     cmds:
       - cmd: powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path dist | Out-Null"
-        platforms: [windows]
-      - cmd: mkdir -p dist
-        platforms: [linux, darwin]
       - task: build
       - cmd: powershell -NoProfile -Command "Copy-Item '{{.BIN_DIR}}/{{.APP_NAME}}.exe' 'dist/{{.DIST_NAME}}.exe' -Force"
-        platforms: [windows]
-      - cmd: cp "{{.BIN_DIR}}/{{.APP_NAME}}" "dist/{{.DIST_NAME}}"
-        platforms: [linux, darwin]
 
   run:
     summary: Runs the application
     cmds:
-      - task: "{{.GOOS}}:run"
+      - task: windows:run
 
   dev:
     summary: Runs the application in development mode
@@ -67,11 +58,6 @@ tasks:
     cmds:
       - task: windows:install:msix:tools
 
-  setup:docker:
-    summary: Builds Docker image for cross-compilation (~800MB download)
-    cmds:
-      - task: common:setup:docker
-
   build:server:
     summary: Builds the application in server mode (no GUI, HTTP server only)
     cmds:
@@ -81,13 +67,3 @@ tasks:
     summary: Runs the application in server mode
     cmds:
       - task: common:run:server
-
-  build:docker:
-    summary: Builds a Docker image for server mode deployment
-    cmds:
-      - task: common:build:docker
-
-  run:docker:
-    summary: Builds and runs the Docker image
-    cmds:
-      - task: common:run:docker
