@@ -18,6 +18,7 @@ const emit = defineEmits<{
   create: []
   edit: [session: SessionView]
   remove: [session: SessionView]
+  toggleSidebar: []
 }>()
 
 const { t } = useI18n()
@@ -58,6 +59,19 @@ function kindLabel(session: SessionView): string {
         {{ query.trim() ? `${filtered.length}/${sessions.length}` : sessions.length }}
       </span>
       <div class="flex-1"></div>
+      <!-- 折叠按钮放在这一行，而不是顶栏：顶栏那个 268px 的盒子一旦被按钮占掉一块，
+           搜索框就被推着往右挪，跟下面这列对不齐了（2026-09-29 学习者指出）。 -->
+      <UTooltip :content="t('app.hideSessions')">
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="panelLeft"
+          :aria-label="t('app.hideSessions')"
+          :aria-expanded="true"
+          @click="emit('toggleSidebar')"
+        />
+      </UTooltip>
       <UTooltip :content="t('list.create')">
         <UButton variant="ghost" size="sm" square icon="plus" @click="emit('create')" />
       </UTooltip>

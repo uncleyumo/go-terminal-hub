@@ -51,7 +51,7 @@ export default {
     none: '（空）',
   },
   term: {
-    exited: '[进程已退出，退出码 {code}]',
+    exited: '— 会话结束 · 退出码 {code} —',
   },
   form: {
     createTitle: '新建会话',

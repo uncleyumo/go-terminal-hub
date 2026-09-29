@@ -51,7 +51,7 @@ export default {
     none: '(empty)',
   },
   term: {
-    exited: '[process exited, code {code}]',
+    exited: '— session ended · code {code} —',
   },
   form: {
     createTitle: 'New session',

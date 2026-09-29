@@ -316,6 +316,12 @@ async function quit() {
 // 订阅必须在任何启动动作之前 —— 事件不补发，订阅之前产生的输出收不到。
 let unsubscribers: Array<() => void> = []
 
+// Go 进程非零退出时 cmd.Wait() 返回 *exec.ExitError，它的 Error() 就是这一句。
+// 只认「exit status N」且 N 跟实际退出码对得上 —— 对不上说明是另一回事，照旧显示。
+function isExitStatus(msg: string, code: number): boolean {
+  return msg.trim() === `exit status ${code}`
+}
+
 // —— 开机自启 ——
 // 只能放在三个订阅之后：事件不补发，早于订阅启动的会话，它的输出前端一句都收不到。
 // 跳过已在跑的：开发时前端热重载会让 onMounted 再跑一次，那时会话还在内存里，
@@ -343,8 +349,16 @@ onMounted(async () => {
       fitTerminal(id)
     }),
     onSessionExited((payload) => {
-      writeTerminal(payload.id, `\r\n${t('term.exited', { code: payload.code })}\r\n`)
-      if (payload.errMsg) writeTerminal(payload.id, `${payload.errMsg}\r\n`)
+      // 退出的提示画成一条弱化的分隔线（\x1b[2m 是变暗），
+      // 不然它跟程序自己打的输出长得一模一样，看着像程序报错。
+      writeTerminal(payload.id, `\r\n\x1b[2m${t('term.exited', { code: payload.code })}\x1b[0m\r\n`)
+      // errMsg 是后端把 cmd.Wait() 的错误原样送过来的。进程非零退出时 Go 返回的
+      // 就是一句 "exit status 1"，跟上面那句说的是同一件事 —— 同一件事说两遍
+      // 看着就像报错了。别的错（文件不存在之类的）照旧显示。
+      const errMsg = payload.errMsg ?? ''
+      if (errMsg !== '' && !isExitStatus(errMsg, payload.code)) {
+        writeTerminal(payload.id, `${errMsg}\r\n`)
+      }
       void load()
     }),
   ]
@@ -371,26 +385,27 @@ onBeforeUnmount(() => {
            之前写死 w-[244px] / w-[248px] 都是拿 268 减 px-3 算的，
            减来减去跟它对不上（2026-09-28 学习者两次指出没对齐）。
            这样写就**没有可算错的数**——px-3 解析成多少，两边都一样。
-           折叠按钮加在这个盒子**里面**、搜索框左边：盒子本身还是 268px，
-           下面 SESSIONS 那栏的对齐关系一点没动。 -->
+           折叠按钮**不在这个盒子里**（放进来会把搜索框往右推，左边多出一块
+           说不清干什么的空白，跟下面这列也对不齐）；它住在 SESSIONS 那一行里，
+           收起之后顶栏只留下一个展开按钮。 -->
       <div
-        class="flex flex-none items-center gap-1 transition-[width] duration-200 ease-out"
+        class="flex flex-none items-center transition-[width] duration-200 ease-out"
         :class="sidebarCollapsed ? 'w-9 pl-1.5' : 'w-[268px] px-3'"
       >
-        <UTooltip :content="t(sidebarCollapsed ? 'app.showSessions' : 'app.hideSessions')">
+        <UTooltip v-if="sidebarCollapsed" :content="t('app.showSessions')">
           <UButton
             variant="ghost"
             size="sm"
             square
-            :icon="sidebarCollapsed ? 'panelRight' : 'panelLeft'"
-            :aria-label="t(sidebarCollapsed ? 'app.showSessions' : 'app.hideSessions')"
-            :aria-expanded="!sidebarCollapsed"
+            icon="panelRight"
+            :aria-label="t('app.showSessions')"
+            :aria-expanded="false"
             @click="toggleSidebar"
           />
         </UTooltip>
 
         <div
-          v-if="!sidebarCollapsed"
+          v-else
           class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-sunken px-2 transition-colors duration-100 focus-within:border-accent"
         >
           <UIcon name="search" :size="14" class="flex-none text-ink-faint" />
@@ -489,6 +504,7 @@ onBeforeUnmount(() => {
           @create="openCreate"
           @edit="openEdit"
           @remove="remove"
+          @toggle-sidebar="toggleSidebar"
         />
       </aside>
 
