@@ -138,6 +138,25 @@ func TestBuildCommand(t *testing.T) {
 			wantPath: "powershell.exe",
 			want:     `powershell.exe -NoLogo -NoProfile -NoExit -Command "Get-Date"`,
 		},
+		{
+			name: "terminal-shell 空 target",
+			kind: "terminal-shell", target: "", args: "",
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /k`,
+		},
+		{
+			// 这里包的是**一对**引号，不是 terminal-cmd 的两对。
+			// 挡的是什么：terminal-cmd 用 ""%s""，那两对是给带空格的路径用的；
+			// 换成命令就坏了（cmd 会去找一个叫 dir /b 的文件）。
+			// 这里换成 "%s" 之后 /s 会把最外层那对剥掉，命令原样跑 —— 实测过
+			// `cmd /d /s /k "dir /b"` 和 `cmd /d /s /k dir /b` 行为完全一致。
+			// 代价是路径带空格照样断（报 'C:\my' is not recognized），
+			// 但收路径的是 terminal-cmd，不是这个 kind。
+			name: "terminal-shell 有 target",
+			kind: "terminal-shell", target: "dir /b", args: "",
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /k "dir /b"`,
+		},
 	}
 
 	for _, c := range cases {
