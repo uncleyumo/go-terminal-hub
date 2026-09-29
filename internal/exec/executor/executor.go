@@ -32,12 +32,22 @@ type Command struct {
 	CmdLine string `json:"cmdLine"` // 完整命令行
 }
 
+var KindWhiteList = []string{"bat", "cmd", "ps1", "exe", "shell", "terminal-cmd", "terminal-powershell", "terminal-shell"}
+
 // BuildCommand 把 Entry 翻译成一条完整命令行。
 // Kind 不认识时返回 error。
 func BuildCommand(e Entry) (Command, error) {
-	if e.Kind != "bat" && e.Kind != "cmd" && e.Kind != "ps1" && e.Kind != "exe" && e.Kind != "shell" {
-		slog.Info("script formats other than bat / cmd / ps1 / exe / shell are not supported for the time being", "e.Kind", e.Kind)
-		return Command{}, errors.New("script formats other than bat / cmd / ps1 / exe / shell are not supported for the time being")
+
+	onTheList := false
+	for _, whiteKind := range KindWhiteList {
+		if e.Kind == whiteKind {
+			onTheList = true
+			break
+		}
+	}
+	if !onTheList {
+		slog.Info("unknown Kind", "e.Kind", e.Kind)
+		return Command{}, errors.New("unknown Kind")
 	}
 
 	// abs path of cmd.exe
@@ -47,7 +57,7 @@ func BuildCommand(e Entry) (Command, error) {
 
 	// 查看 Target 脚本是否存在
 	if _, err := os.Stat(e.Target); err != nil {
-		if e.Kind != "shell" {
+		if e.Kind != "shell" && e.Kind != "terminal-cmd" && e.Kind != "terminal-powershell" && e.Kind != "terminal-shell" {
 			slog.Info("target is missing", "e.Target", e.Target)
 			return Command{}, errors.New("target is missing")
 		}
@@ -104,6 +114,53 @@ func BuildCommand(e Entry) (Command, error) {
 			return Command{}, errors.New("cmd.exe not found")
 		}
 		cmdLine = fmt.Sprintf("cmd.exe /d /s /c %s", e.Target)
+		return Command{Path: cmdExeAbsPath, CmdLine: cmdLine}, nil
+	case "terminal-cmd":
+		if cmdExeAbsPathErr != nil {
+			slog.Info("cmd.exe not found", "err", cmdExeAbsPathErr)
+			return Command{}, errors.New("cmd.exe not found")
+		}
+		if e.Target == "" {
+			cmdLine = fmt.Sprintf("cmd.exe /k")
+		} else {
+			if e.Args == "" {
+				cmdLine = fmt.Sprintf("cmd.exe /d /s /k \"\"%s\"\"", e.Target)
+			} else {
+				cmdLine = fmt.Sprintf("cmd.exe /d /s /k \"\"%s\" %s\"", e.Target, e.Args)
+			}
+		}
+		return Command{Path: cmdExeAbsPath, CmdLine: cmdLine}, nil
+	case "terminal-powershell":
+		if powershellExeAbsPathErr != nil {
+			slog.Info("powershell.exe not found", "err", powershellExeAbsPathErr)
+			return Command{}, errors.New("powershell.exe not found")
+		}
+		args := ""
+		if e.Args == "" {
+			args = ""
+		} else {
+			args = " " + e.Args
+		}
+		if e.Target == "" {
+			cmdLine = fmt.Sprintf("powershell.exe -NoLogo -NoProfile")
+		} else {
+			cmdLine = fmt.Sprintf("powershell.exe -NoLogo -NoProfile -NoExit -Command \"%s\"%s", e.Target, args)
+		}
+		return Command{Path: powershellExeAbsPath, CmdLine: cmdLine}, nil
+	case "terminal-shell":
+		if cmdExeAbsPathErr != nil {
+			slog.Info("cmd.exe not found", "err", cmdExeAbsPathErr)
+			return Command{}, errors.New("cmd.exe not found")
+		}
+		if e.Target == "" {
+			cmdLine = fmt.Sprintf("cmd.exe /k")
+		} else {
+			if e.Args == "" {
+				cmdLine = fmt.Sprintf("cmd.exe /d /s /k \"%s\"", e.Target)
+			} else {
+				cmdLine = fmt.Sprintf("cmd.exe /d /s /k \"%s\" %s", e.Target, e.Args)
+			}
+		}
 		return Command{Path: cmdExeAbsPath, CmdLine: cmdLine}, nil
 	}
 	return Command{}, errors.New("unknown Kind")
