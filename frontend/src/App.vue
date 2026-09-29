@@ -38,7 +38,6 @@ import {
 } from './terminal/manager'
 import { normalizeLocale, setLocale, type AppLocale } from './i18n'
 import { applyTheme, normalizeTheme, watchSystemTheme, type ThemeMode } from './theme'
-import { resolveKind } from './sessionKind'
 import brandIcon from './assets/brand/icon.svg'
 
 const { t } = useI18n()
@@ -589,7 +588,7 @@ onBeforeUnmount(() => {
                 {{ t('detail.kind') }}
               </div>
               <div class="mt-0.5 font-mono text-xs text-ink">
-                {{ t(`kind.${resolveKind(selected.config.kind, selected.config.target)}`) }}
+                {{ t(`kind.${selected.config.kind}`) }}
               </div>
             </div>
             <div>

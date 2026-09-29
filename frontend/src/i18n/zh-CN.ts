@@ -81,6 +81,8 @@ export default {
     pickFailed: '打开文件选择框失败',
     nameAutoHint: '留空则按「脚本名(时间)」自动命名',
     targetShellPlaceholder: '一整条 cmd 命令，不是文件路径',
+    targetTerminalPlaceholder: '选填 —— 起来先跑这条命令',
+    targetTerminalHint: '留空就是纯终端。填了就先跑这条，跑完停在提示符等你敲。',
     nameRequired: '名称必填',
     targetRequired: '目标必填',
   },

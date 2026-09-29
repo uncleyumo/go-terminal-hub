@@ -12,7 +12,6 @@ import USwitch from './ui/USwitch.vue'
 import UTextarea from './ui/UTextarea.vue'
 import { notify } from './ui/toast'
 import { createSession, getAppWorkDir, updateSession, type DataStore, type SessionView } from '../api'
-import { isTerminalKind, resolveKind, TERMINAL_TARGETS } from '../sessionKind'
 
 const props = defineProps<{
   modelValue: boolean
@@ -36,9 +35,10 @@ const title = computed(() => (isEdit.value ? t('form.editTitle') : t('form.creat
 
 const KINDS = ['bat', 'cmd', 'ps1', 'exe', 'shell', 'terminal-cmd', 'terminal-powershell']
 
-// terminal-* 这两个**只存在于前端**：后端的白名单不认它们，
-// 提交时在 toDataStore() 里翻译成 kind=shell + 拼好的 target（D39，后端零改动）。
-// 定义和「怎么反着还原」都在 sessionKind.ts，列表和详情读的是同一份。
+// terminal-* 这两个是**后端认的类型**（executor.go 的 KindWhiteList 里有），
+// 命令行由后端按 kind 拼。这里的区别只在「target 可以不填」：
+// 不填就是开一个空终端等你敲，填了就先跑它再停在提示符（cmd 的 /k、PowerShell 的 -NoExit）。
+const TERMINAL_KINDS = new Set(['terminal-cmd', 'terminal-powershell'])
 // log 模式后端还没做：internal/exec/hub/hub.go 的 switch 里 case "log" 直接
 // 返回 error，选了必然启动失败。先摆出来但禁掉，做完再放开（2026-09-28 学习者指出）
 const MODES = [
@@ -98,10 +98,7 @@ watch(visible, (open) => {
       ? {
           id: source.id,
           name: source.name,
-          // 存的是 shell + 预设 target，还原成 terminal-cmd / terminal-powershell：
-          // 不还原的话，编辑一条常驻终端会看到「shell」被选中，target 框里躺着一整条
-          // 命令 —— 用户不知道那是界面替他填的，多半会当成普通 shell 给改掉。
-          kind: resolveKind(source.kind, source.target),
+          kind: source.kind,
           target: source.target,
           args: source.args,
           workDir: source.workDir,
@@ -130,8 +127,8 @@ watch(visible, (open) => {
 // shell 的 target 是一整条命令，不是一个文件路径，没有文件名可以拿来兜底命名，
 // 所以名称只在 shell 下必填；其余 kind 留空由下面自动生成。
 const isShell = computed(() => form.kind === 'shell')
-// 常驻终端：既不用 target 也不用 args（那条命令前端已经拼好了）
-const isTerminal = computed(() => isTerminalKind(form.kind))
+// 常驻终端：target 是选填的，所以名字跟 shell 一样必填（下面 validate 认这个）
+const isTerminal = computed(() => TERMINAL_KINDS.has(form.kind))
 
 // —— 名称自动生成 ——
 // 格式「<名字>  (<创建时间>)」，例 xxx.exe  (2026-09-27 21:30)。
@@ -151,19 +148,20 @@ function autoName(): string {
   const now = new Date()
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`
-  // 常驻终端没有 target 可取名，直接拿类型当名字：terminal-cmd / terminal-powershell
-  const base = isTerminal.value ? form.kind : scriptName(form.target)
+  // 常驻终端的 target 可以是空的，空的时候没有文件名可取，拿类型当名字
+  const base = form.target.trim() === '' ? form.kind : scriptName(form.target)
   return `${base}  (${date} ${time})`
 }
 
 // 名称还是空的就自动补上；绝不覆盖用户已经写下的名字。
 watch([() => form.target, () => form.kind], () => {
   if (form.name.trim() !== '') return
-  if (isTerminal.value) {
+  // shell 和常驻终端的名字都是必填的，这里先把默认值填上，用户没改就直接用
+  if (isShell.value || isTerminal.value) {
     form.name = autoName()
     return
   }
-  if (isShell.value || form.target.trim() === '') return
+  if (form.target.trim() === '') return
   form.name = autoName()
 })
 
@@ -220,17 +218,18 @@ const namePlaceholder = computed(() =>
   isShell.value ? t('form.namePlaceholder') : t('form.nameAutoHint'),
 )
 
-const targetPlaceholder = computed(() =>
-  isShell.value ? t('form.targetShellPlaceholder') : t('form.targetPlaceholder'),
-)
+const targetPlaceholder = computed(() => {
+  if (isTerminal.value) return t('form.targetTerminalPlaceholder')
+  return isShell.value ? t('form.targetShellPlaceholder') : t('form.targetPlaceholder')
+})
 
 function toDataStore(): DataStore {
   return {
     id: form.id,
     name: form.name,
-    // 常驻终端在前端有自己的类型，后端只认 shell —— 这里翻译掉（D39）
-    kind: isTerminal.value ? 'shell' : form.kind,
-    target: isTerminal.value ? TERMINAL_TARGETS[form.kind] : form.target,
+    // kind 和 target 都是后端认的东西，原样存。前端不再替后端拼命令行。
+    kind: form.kind,
+    target: form.target.trim(),
     args: form.args,
     workDir: form.workDir,
     env: form.envText
@@ -252,7 +251,7 @@ function validate(): boolean {
   if (!isShell.value && form.name.trim() === '' && form.target.trim() !== '') {
     form.name = autoName()
   }
-  // 常驻终端没有 target，名字必填（跟 shell 一样），但不用去查 target 存不存在
+  // shell 和常驻终端的 target 都是命令、可以留空，所以名字必填（跟脚本类反过来）
   errors.name =
     (isShell.value || isTerminal.value) && form.name.trim() === '' ? t('form.nameRequired') : ''
   errors.target =
@@ -307,36 +306,40 @@ async function submit() {
         <USegmented v-model="form.kind" :options="kindOptions" />
       </div>
 
-      <!-- 常驻终端不用 target 和 args：那条命令前端已经拼好了（D39） -->
-      <template v-if="!isTerminal">
-        <div>
-          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
-            {{ t('form.target') }}
-            <span class="text-neg">*</span>
-          </label>
-          <UInput
-            v-model="form.target"
-            :placeholder="targetPlaceholder"
-            :invalid="!!errors.target"
-            mono
-            @enter="submit"
-          >
-            <template v-if="canPick" #suffix>
-              <UButton variant="ghost" size="sm" icon="folder" @click="pickFile">
-                {{ t('form.browse') }}
-              </UButton>
-            </template>
-          </UInput>
-          <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
-        </div>
+      <!-- 常驻终端的 target 是选填的：不填 = 空终端，填了 = 先跑它再停在提示符。
+           所以这里不标红星，提示语也跟脚本类不一样。 -->
+      <div>
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.target') }}
+          <span v-if="!isTerminal" class="text-neg">*</span>
+        </label>
+        <UInput
+          v-model="form.target"
+          :placeholder="targetPlaceholder"
+          :invalid="!!errors.target"
+          mono
+          @enter="submit"
+        >
+          <template v-if="canPick" #suffix>
+            <UButton variant="ghost" size="sm" icon="folder" @click="pickFile">
+              {{ t('form.browse') }}
+            </UButton>
+          </template>
+        </UInput>
+        <p v-if="errors.target" class="mt-1 text-[11px] text-neg">{{ errors.target }}</p>
+        <p v-else-if="isTerminal" class="mt-1 text-[11px] text-ink-faint">
+          {{ t('form.targetTerminalHint') }}
+        </p>
+      </div>
 
-        <div>
-          <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
-            {{ t('form.args') }}
-          </label>
-          <UInput v-model="form.args" :placeholder="t('form.argsPlaceholder')" mono />
-        </div>
-      </template>
+      <!-- args 对常驻终端先藏着：它会被塞进 target 外面那层引号里，
+           命令里本来就有引号的话套起来是什么样没验证过，宁可不给这个入口。 -->
+      <div v-if="!isTerminal">
+        <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">
+          {{ t('form.args') }}
+        </label>
+        <UInput v-model="form.args" :placeholder="t('form.argsPlaceholder')" mono />
+      </div>
 
       <div>
         <label class="mb-1.5 block text-[11px] font-medium tracking-wide text-ink-dim">

@@ -81,6 +81,8 @@ export default {
     pickFailed: 'Failed to open the file picker',
     nameAutoHint: 'Leave empty to name it after the script file and time',
     targetShellPlaceholder: 'A whole cmd command line, not a file path',
+    targetTerminalPlaceholder: 'Optional — a command to run first',
+    targetTerminalHint: 'Leave empty for a plain terminal. Fill it in to run that first, then stay at the prompt.',
     nameRequired: 'Name is required',
     targetRequired: 'Target is required',
   },

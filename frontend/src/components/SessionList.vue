@@ -5,7 +5,6 @@ import UButton from './ui/UButton.vue'
 import UIcon from './ui/UIcon.vue'
 import UTooltip from './ui/UTooltip.vue'
 import type { SessionView } from '../api'
-import { resolveKind } from '../sessionKind'
 
 const props = defineProps<{
   sessions: SessionView[]
@@ -40,10 +39,10 @@ function label(session: SessionView): string {
   return session.running ? `${name} · ${t('list.running')}` : name
 }
 
-// 存的是 kind=shell，界面上要显示 terminal(cmd) / terminal(powershell)。
-// 不还原的话两种常驻终端在列表里长得一模一样，用户分不出自己建的是哪个。
+// kind 直接印磁盘上的值：terminal-cmd / terminal-powershell 是后端认的真类型
+// （executor.go 的 KindWhiteList），不用前端再翻译回去。
 function kindLabel(session: SessionView): string {
-  return t(`kind.${resolveKind(session.config.kind, session.config.target)}`)
+  return t(`kind.${session.config.kind}`)
 }
 </script>
 
