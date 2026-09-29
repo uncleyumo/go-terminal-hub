@@ -188,6 +188,13 @@ const PICK_FILTERS: Record<string, string> = {
   cmd: '*.cmd',
   ps1: '*.ps1',
   exe: '*.exe;*.com',
+  // terminal-cmd 的 target 是**脚本路径**（外面会被后端包上引号），
+  // 所以给的是脚本后缀。
+  'terminal-cmd': '*.bat;*.cmd',
+  // terminal-powershell 的 target 严格说是**命令**（-Command "%s"），
+  // 但挑一个脚本让 PowerShell 跑是最常用的那个用法，所以给脚本后缀而不是不给。
+  'terminal-powershell': '*.ps1;*.psm1;*.bat;*.cmd',
+  // terminal-shell 不给：它的 target 是一条命令，没有「文件」可挑。
 }
 
 const canPick = computed(() => PICK_FILTERS[form.kind] !== undefined)
@@ -297,7 +304,9 @@ async function submit() {
 </script>
 
 <template>
-  <UDialog v-model="visible" :title="title">
+  <!-- 720：Kind 那一排八个选项在 560 宽里排不下（最后一个 terminal(powershell)
+       会被切掉，底部还多一条横向滚动条）。 -->
+  <UDialog v-model="visible" :title="title" width="720px">
     <div class="flex flex-col gap-3.5">
       <!-- 标签在上、控件在下：同一列里对齐，两列并排时读起来是一条一条的 -->
       <div>

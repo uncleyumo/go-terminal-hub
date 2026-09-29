@@ -8,8 +8,12 @@ const props = withDefaults(
     title: string
     /** 内容区最大高度。弹框整体不超出视口，超出的部分归内容区滚 */
     bodyMaxHeight?: string
+    /** 弹框最大宽度。写成一个 prop 而不是写死在样式里：
+     *  560 是当初按「确认框只有一句话」定的，会话表单那八种 kind 排不下，
+     *  只能让调用方自己说要多宽。 */
+    width?: string
   }>(),
-  { bodyMaxHeight: '62vh' },
+  { bodyMaxHeight: '62vh', width: '560px' },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -58,7 +62,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             aria-modal="true"
             :aria-label="title"
             class="flex max-h-full w-full flex-col overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl shadow-black/40"
-            style="max-width: 560px"
+            :style="{ maxWidth: width }"
           >
             <div class="flex flex-none items-center gap-2 border-b border-line px-5 py-3.5">
               <span class="flex-1 text-[13px] font-semibold text-ink">{{ title }}</span>

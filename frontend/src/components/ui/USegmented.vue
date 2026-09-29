@@ -12,8 +12,11 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
 
 <template>
+  <!-- flex-wrap：选项排不下时换行，不换行的话整组会撑出容器 ——
+       溢出去的部分在弹框里会变成一条横向滚动条，最右边那个选项（比如
+       terminal(powershell)）直接被切掉看不见。 -->
   <div
-    class="inline-flex items-center gap-0.5 rounded-lg border border-line-strong bg-sunken p-0.5"
+    class="inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-line-strong bg-sunken p-0.5"
   >
     <button
       v-for="opt in options"
@@ -21,7 +24,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
       type="button"
       :disabled="opt.disabled"
       :aria-pressed="opt.value === modelValue"
-      class="rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors duration-100"
+      class="rounded-[5px] px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-100"
       :class="
         opt.disabled
           ? 'cursor-not-allowed text-ink-faint'
