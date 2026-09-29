@@ -285,3 +285,13 @@ func (h *Hub) StopAllSessions() error {
 	wg.Wait()
 	return errs
 }
+
+func (h *Hub) GetSession(id string) (*session.Session, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if record, ok := h.records[id]; ok {
+		return record.sess, nil
+	}
+	return nil, errors.New("record not found for id when getting session: " + id)
+}

@@ -92,3 +92,7 @@ func (s *Session) Result() (executor.ExitResult, bool) {
 		return executor.ExitResult{}, false
 	}
 }
+
+func (s *Session) GetLaunchSpec() executor.LaunchSpec {
+	return s.ex.GetLaunchSpec()
+}

@@ -34,7 +34,7 @@ task runtime"），所以**不用另外装 `task`**。
 | 路径 | 是什么 | 动不动 |
 |---|---|---|
 | `main.go` | 入口。建 app、建窗口、注册 service、`app.Run()` | 要改 |
-| `greetservice.go` | 模板自带的示例 service（一个 `Greet` 方法） | 会被换成 Executor / Session |
+| `internal/service/greetservice.go` | 模板自带的示例 service（一个 `Greet` 方法） | 会被换成 Executor / Session |
 | `go.mod` / `go.sum` | Go 依赖。**已锁 `wails/v3 v3.0.0-beta.23`** | 加依赖时自动改 |
 | `Taskfile.yml` | 构建入口，只做平台分发 | 基本不动 |
 | `build/config.yml` | 应用元信息（公司 / 产品名 / 版本）+ dev 模式配置 | M5 要改 |

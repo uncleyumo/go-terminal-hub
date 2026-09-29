@@ -253,4 +253,6 @@ type Executor interface {
 	CloseTerminal() error
 
 	KillProcess() error
+
+	GetLaunchSpec() LaunchSpec
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
+	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -63,45 +64,30 @@ func (a *AppService) ResolveWorkDir(id string) (string, error) {
 	if !ok {
 		return "", errors.Errorf("session not found for id when resolving work dir: %s", id)
 	}
-	return session.WorkDir, nil
+
+	sessionWorkDir := session.WorkDir
+	if sessionWorkDir == "" {
+		return os.Getwd()
+	}
+	return sessionWorkDir, nil
 }
 
-// ResolveScriptPath 用于复制脚本文件绝对路径
-
-func (a *AppService) ResolveScriptPath(id string) (string, error) {
-	storeInstance, err := store.GetStore()
+// ResolveSpecCommandLine 用于回显实际的命令行
+func (a *AppService) ResolveSpecCommandLine(id string) (string, error) {
+	session, err := hub.GetHub().GetSession(id)
 	if err != nil {
 		return "", err
 	}
-	session, ok := storeInstance.GetOne(id)
-	if !ok {
-		return "", errors.Errorf("session not found for id when resolving script path: %s", id)
-	}
-	kind := session.Kind
-	if !executor.CheckKindInWhiteList(kind) {
-		return "", errors.Errorf("kind is not in white list: %s", kind)
-	}
-	if kind == "terminal-shell" || kind == "shell" {
-		return "", errors.Errorf("kind is not supported when resolving script path: %s", kind)
-	}
-	return session.Target, nil
+	return session.GetLaunchSpec().Command, nil
 }
 
 // OpenWorkDir 用于打开工作目录
-
 func (a *AppService) OpenWorkDir(id string) error {
-	storeInstance, err := store.GetStore()
+	sessionWorkDir, err := a.ResolveWorkDir(id)
 	if err != nil {
 		return err
 	}
-	session, ok := storeInstance.GetOne(id)
-	if !ok {
-		return errors.Errorf("session not found for id when opening work dir: %s", id)
-	}
-	if _, err := os.Stat(session.WorkDir); err != nil {
-		return err
-	}
-	cmd := exec.Command("explorer.exe", session.WorkDir)
+	cmd := exec.Command("explorer.exe", sessionWorkDir)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -135,8 +121,7 @@ func (a *AppService) OpenScriptDir(id string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(abs)
-	cmd := exec.Command("explorer.exe", dir)
+	cmd := exec.Command("explorer.exe", filepath.Dir(abs))
 	if err := cmd.Start(); err != nil {
 		return err
 	}

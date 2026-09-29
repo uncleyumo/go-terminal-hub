@@ -255,7 +255,7 @@ async function pickFile() {
     if (!picked) return
     form.target = picked
   } catch (error) {
-    notify.error(`${t('form.pickFailed')}: ${String(error)}`)
+    reportDialogFailure(error)
   }
 }
 
@@ -272,8 +272,22 @@ async function pickDir() {
     if (!picked) return
     form.workDir = picked
   } catch (error) {
-    notify.error(`${t('form.pickFailed')}: ${String(error)}`)
+    reportDialogFailure(error)
   }
+}
+
+// 系统文件对话框 reject 的绝大多数情况是**用户点了「取消」**，不是失败：
+// `IFileDialog::Show` 取消时返回 HRESULT 0x800704C7（= ERROR_CANCELLED），
+// Wails 原样往上抛（`internal/go-common-file-dialog/cfd/vtblCommonFunc.go` 的
+// `hresultToError` → `ole.NewError`），`PromptForSingleSelection` 也只是 `return "", err`。
+//
+// 弹 toast 骂用户「打开文件失败」是错的。真正打不开对话框（COM 挂了）几乎不会发生，
+// 所以这里一律不打扰用户，只记进 console。
+// ⚠️ 这是「不区分」的处理：真失败也一起吞了。要精确区分得在 Go 那边接
+// `application.Get().Dialog.OpenFile().PromptForSingleSelection()`，
+// 用 `errors.As` 取 `*ole.OleError` 比 `Code() == 0x800704C7`，取消就返回 `("", nil)`。
+function reportDialogFailure(error: unknown) {
+  console.warn('[pick] file dialog rejected:', error)
 }
 
 const namePlaceholder = computed(() =>

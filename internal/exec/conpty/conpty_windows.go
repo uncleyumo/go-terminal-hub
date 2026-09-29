@@ -172,6 +172,12 @@ func (c *ConPTYExecutor) KillProcess() error {
 	}
 	return cmd.Process.Kill()
 }
+func (c *ConPTYExecutor) GetLaunchSpec() executor.LaunchSpec {
+	c.mu.Lock()
+	ls := c.spec
+	c.mu.Unlock()
+	return ls
+}
 
 // 检查 ConPTYExecutor 是否实现了 Executor 接口
 var _ executor.Executor = (*ConPTYExecutor)(nil)
