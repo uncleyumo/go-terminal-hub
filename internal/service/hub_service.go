@@ -1,4 +1,4 @@
-package main
+package service
 
 import "github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 

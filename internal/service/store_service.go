@@ -1,4 +1,4 @@
-package main
+package service
 
 import (
 	"github.com/google/uuid"
@@ -90,4 +90,12 @@ func (s *StoreService) SaveSettings(settings store.Settings) error {
 		return errors.Errorf("update settings error: %v", err)
 	}
 	return nil
+}
+
+func (s *StoreService) reorderSessions(ids []string) error {
+	useStore, err := store.GetStore()
+	if err != nil {
+		return errors.Errorf("get store error when save settings: %v", err)
+	}
+	return useStore.ReorderSessions(ids)
 }

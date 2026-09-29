@@ -11,6 +11,7 @@ import (
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/sink"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
+	"github.com/uncleyumo/go-terminal-hub/internal/service"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -56,11 +57,11 @@ func main() {
 		Name:        "go-terminal-hub",
 		Description: "Manage scripts and CLI programs as terminal sessions from one window",
 		Services: []application.Service{
-			application.NewService(&GreetService{}),
-			application.NewService(&XtermDemoService{}),
-			application.NewService(&StoreService{}),
-			application.NewService(&HubService{}),
-			application.NewService(&AppService{}),
+			application.NewService(&service.GreetService{}),
+			application.NewService(&service.XtermDemoService{}),
+			application.NewService(&service.StoreService{}),
+			application.NewService(&service.HubService{}),
+			application.NewService(&service.AppService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

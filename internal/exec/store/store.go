@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ type DataStore struct {
 	Cols      uint16   `json:"cols"`
 	Rows      uint16   `json:"rows"`
 	AutoStart bool     `json:"autoStart"`
+	SortOrder int      `json:"sortOrder"`
 }
 
 type Settings struct {
@@ -255,4 +257,32 @@ func (s *Store) UpdateSettings(settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.writeSettingsLocked(settings)
+}
+
+func (s *Store) ReorderSessions(ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var errs error
+	if s.dataList == nil {
+		return errors.New("data list is nil")
+	}
+	if len(ids) != len(s.dataList) {
+		return errors.New("invalid ids length")
+	}
+	for _, id := range ids {
+		_, ok := s.dataList[id]
+		if !ok {
+			slog.Error("invalid id when reorder sessions", "id", id)
+			errs = errors.Join(errs, fmt.Errorf("invalid id: %s", id))
+		}
+	}
+	if errs != nil {
+		return errs
+	}
+	for i, id := range ids {
+		item, _ := s.dataList[id]
+		item.SortOrder = i + 1
+		s.dataList[id] = item
+	}
+	return s.writeDataFileLocked(s.dataList)
 }

@@ -34,18 +34,20 @@ type Command struct {
 
 var KindWhiteList = []string{"bat", "cmd", "ps1", "exe", "shell", "terminal-cmd", "terminal-powershell", "terminal-shell"}
 
+func CheckKindInWhiteList(kind string) bool {
+	for _, whiteKind := range KindWhiteList {
+		if kind == whiteKind {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildCommand 把 Entry 翻译成一条完整命令行。
 // Kind 不认识时返回 error。
 func BuildCommand(e Entry) (Command, error) {
 
-	onTheList := false
-	for _, whiteKind := range KindWhiteList {
-		if e.Kind == whiteKind {
-			onTheList = true
-			break
-		}
-	}
-	if !onTheList {
+	if !CheckKindInWhiteList(e.Kind) {
 		slog.Info("unknown Kind", "e.Kind", e.Kind)
 		return Command{}, errors.New("unknown Kind")
 	}
