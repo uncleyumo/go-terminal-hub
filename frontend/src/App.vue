@@ -381,16 +381,20 @@ onBeforeUnmount(() => {
          应用名和图标交给系统标题栏，不在这里画第二份。 -->
     <header class="flex h-11 flex-none items-center gap-3 border-b border-line bg-surface pr-2 pl-3">
       <!-- 搜索框**不再是**「一个宽度凑出来的数」，而是跟 SessionList 那行同一个盒子：
-           同样的 w-[268px] + px-3，灰底那一层再 flex-1 填满剩下的。
-           之前写死 w-[244px] / w-[248px] 都是拿 268 减 px-3 算的，
+           同样的 w-[268px]，灰底那一层再 flex-1 填满剩下的。
+           之前写死 w-[244px] / w-[248px] 都是拿 268 减内边距算的，
            减来减去跟它对不上（2026-09-28 学习者两次指出没对齐）。
-           这样写就**没有可算错的数**——px-3 解析成多少，两边都一样。
-           折叠按钮**不在这个盒子里**（放进来会把搜索框往右推，左边多出一块
-           说不清干什么的空白，跟下面这列也对不齐）；它住在 SESSIONS 那一行里，
-           收起之后顶栏只留下一个展开按钮。 -->
+           这样写就**没有可算错的数**——内边距解析成多少，两边都一样。
+
+           左内边距是 **0**，不是 px-3：<header> 自己已经带了 pl-3，盒子再加一层的话
+           灰底搜索框会从 24px 开始，而下面 SESSIONS 那行从 12px 开始 —— 错开 12px，
+           左边看着就是一片不知道干什么的空白（2026-09-29 学习者指出）。
+           只留 pr-3，右边缘照样落在 268px 上。
+           折叠按钮**不在这个盒子里**（放进来会把搜索框往右推）；它住在 SESSIONS
+           那一行里，收起之后顶栏只留下一个展开按钮。 -->
       <div
         class="flex flex-none items-center transition-[width] duration-200 ease-out"
-        :class="sidebarCollapsed ? 'w-9 pl-1.5' : 'w-[268px] px-3'"
+        :class="sidebarCollapsed ? 'w-9 pl-1.5' : 'w-[268px] pr-3'"
       >
         <UTooltip v-if="sidebarCollapsed" :content="t('app.showSessions')">
           <UButton
