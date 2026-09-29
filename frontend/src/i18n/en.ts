@@ -15,6 +15,7 @@ export default {
     searchClear: 'Clear search',
     hideSessions: 'Collapse the session list',
     showSessions: 'Expand the session list',
+    repository: 'Open the GitHub repository',
   },
   theme: {
     label: 'Theme',

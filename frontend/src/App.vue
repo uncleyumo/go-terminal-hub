@@ -16,7 +16,7 @@ import UToaster from './components/ui/UToaster.vue'
 import UTooltip from './components/ui/UTooltip.vue'
 import { confirm } from './components/ui/confirm'
 import { notify } from './components/ui/toast'
-import { Clipboard } from '@wailsio/runtime'
+import { Browser, Clipboard } from '@wailsio/runtime'
 import {
   deleteSession,
   getSettings,
@@ -456,6 +456,22 @@ async function quit() {
   await quitApp()
 }
 
+// 仓库地址写死在这儿，不从后端拿：它跟着发布地址走，前端是唯一会用到它的地方。
+// 要换地址（比如 fork 了）就改这一行。
+const REPOSITORY_URL = 'https://github.com/uncleyumo/go-terminal-hub'
+
+// 交给系统浏览器打开，不在 app 里开一个内嵌页：
+// 内嵌页就要处理「网页里的链接点了怎么办」「后退怎么办」，一个外链不值得
+async function openRepository() {
+  try {
+    await Browser.OpenURL(REPOSITORY_URL)
+  } catch (error) {
+    // 打不开浏览器是个边缘情况（默认浏览器被卸了之类），记一笔就行，
+    // 不给用户弹一个他不知道怎么处理的错
+    console.warn('open repository failed:', error)
+  }
+}
+
 // —— 快捷键 ——
 // 本版本**不做任何键盘快捷键**（学习者 2026-09-28 定的）。
 // 之前加过 Ctrl+K 聚焦搜索 + Esc 清搜索，现在连监听带提示一起删干净。
@@ -644,6 +660,21 @@ onBeforeUnmount(() => {
           icon="power"
           :aria-label="t('app.quitHint')"
           @click="quit"
+        />
+      </UTooltip>
+
+      <div class="mx-0.5 h-5 w-px bg-line"></div>
+
+      <!-- 仓库链接排在最右、单独隔一条线：它是「离开这个 app」的动作，
+           跟左边那排操作 app 的按钮不是一类，混在里面用户会当成某个设置 -->
+      <UTooltip :content="t('app.repository')">
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="github"
+          :aria-label="t('app.repository')"
+          @click="openRepository"
         />
       </UTooltip>
     </header>

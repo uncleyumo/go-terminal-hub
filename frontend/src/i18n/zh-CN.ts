@@ -15,6 +15,7 @@ export default {
     searchClear: '清空搜索',
     hideSessions: '收起会话列表',
     showSessions: '展开会话列表',
+    repository: '打开 GitHub 仓库',
   },
   theme: {
     label: '主题',
