@@ -216,7 +216,10 @@ func (s *Store) List() []DataStore {
 		list = append(list, data)
 	}
 	sort.Slice(list, func(i, j int) bool {
-		return list[i].ID > list[j].ID
+		if list[i].SortOrder == list[j].SortOrder {
+			return list[i].ID > list[j].ID
+		}
+		return list[i].SortOrder < list[j].SortOrder
 	})
 	return list
 }
