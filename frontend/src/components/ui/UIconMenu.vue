@@ -23,6 +23,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const trigger = useTemplateRef<HTMLElement>('trigger')
+// 菜单本体 Teleport 到 body，不在 trigger 里面 —— 点菜单项时必须单独认它，
+// 否则 pointerdown 会当成「点了外面」把菜单关掉，click 落在已移除的元素上，choose() 不跑。
+const panel = useTemplateRef<HTMLElement>('panel')
 const open = ref(false)
 // 位置只在打开那一刻量一次：这个界面里触发器不会移动
 const pos = ref({ left: 0, top: 0 })
@@ -59,7 +62,15 @@ function choose(value: string) {
 }
 
 function onDocPointer(e: PointerEvent) {
-  if (open.value && !trigger.value?.contains(e.target as Node)) close()
+  if (!open.value) return
+  const target = e.target as Node
+  // trigger 和 panel 都不算「点到外面」：
+  // ① panel 不排掉的话，点菜单项会被 pointerdown 抢先关掉（菜单带 leave 动画，
+  //    元素约 90ms 后才真正移除；手按得慢一点，click 就打在一个已经不在的节点上，
+  //    choose() 不跑 —— 表现是「点语言/主题不生效，偶尔成一次」）。
+  // ② trigger 不排掉的话，菜单开着时点图标按钮，pointerdown 先关、click 又开，关不掉。
+  if (trigger.value?.contains(target) || panel.value?.contains(target)) return
+  close()
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -103,6 +114,7 @@ onBeforeUnmount(() => {
       >
         <div
           v-if="open"
+          ref="panel"
           role="menu"
           class="fixed z-50 w-[176px] overflow-hidden rounded-lg border border-line-strong bg-overlay p-1 shadow-lg shadow-black/15"
           :style="{ left: `${pos.left}px`, top: `${pos.top}px` }"

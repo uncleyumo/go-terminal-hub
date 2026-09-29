@@ -87,11 +87,13 @@ const localeOptions = [
 ]
 
 // 顺序跟 Windows「个性化 → 颜色」里的排法一致：浅色 → 深色 → 跟随系统
-const themeOptions = [
+// computed 是必须的：t() 只在被调用那一刻取一次值，写成普通数组的话切到中文后
+// 这三个菜单项还是英文（localeOptions 不用 computed —— 那两个是语言自己的名字）
+const themeOptions = computed(() => [
   { value: 'light', label: t('theme.light'), icon: 'sun' },
   { value: 'dark', label: t('theme.dark'), icon: 'moon' },
   { value: 'system', label: t('theme.system'), icon: 'monitor' },
-]
+])
 
 const selected = computed(
   () => sessions.value.find((s) => s.config.id === selectedId.value) ?? null,
