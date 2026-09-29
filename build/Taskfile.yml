@@ -203,16 +203,19 @@ tasks:
     cmds:
       # wails3 出 ico 的「大尺寸档」（256/128/64/48），像素来自 appicon.png。
       #
-      # -macfilename 指向 bin/ 是因为 CLI 把它的默认值写死成 build/darwin/icon.icns，
-      # 而且没有「关掉 mac 输出」的开关——不给值它就照默认路径写，目录没了直接报错。
-      # bin/ 在 .gitignore 里，所以这份 .icns 不会被提交，纯粹是个落点。
-      # 2026-09-29 归档时同时去掉了 -iconcomposerinput / -macassetdir（那两个写 Assets.car）。
-      # 要加回 macOS，从 git 历史取回 build/darwin/ 再把参数改回去。
-      - wails3 generate icons -input appicon.png -macfilename ../bin/unused-darwin-icon.icns -windowsfilename windows/icon.ico -sizes 256,128,64,48,32,24,16
+      # 那个 .icns 是白写的，纯粹为了让命令不报错：CLI 把 -macfilename 的默认值写死成
+      # build/darwin/icon.icns，又没有「关掉 mac 输出」的开关，不给值就照默认路径写。
+      # build/darwin/ 已在 2026-09-29 归档时删掉，所以给它一个用完就扔的落点。
+      # ⚠️ 这个 task 跑在 build:native **之前**，那时 bin/ 还不存在（全新 clone 上也没有），
+      # 而 wails3 不会自动建父目录 → 必须先 mkdir，不然整个构建挂在这一步。
+      # 写完立刻 rm，bin/ 本身在 .gitignore 里，删了不留痕。
+      - mkdir ../bin
+      - wails3 generate icons -input appicon.png -macfilename ../bin/darwin-icon.icns -windowsfilename windows/icon.ico -sizes 256,128,64,48,32,24,16
       # 再把 32/24/16 三档的像素换成 appicon-compact.png。
       # 为什么分两套素材：这三档是 Windows 托盘图标实际取用的档位（见 tools/makeico 的说明），
       # 大图直接缩到 16px 时三颗状态点和分隔线会糊成一片。
       - go run ../tools/makeico
+      - rm ../bin/darwin-icon.icns
 
   dev:frontend:
     summary: Runs the frontend in development mode
