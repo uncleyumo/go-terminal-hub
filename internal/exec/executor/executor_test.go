@@ -34,6 +34,10 @@ func fixtures(t *testing.T) string {
 // 为什么 CmdLine 必须含程序名：Windows 交给新进程的只有一个字符串，怎么拆是那个程序
 // 自己的事。cmd.exe / powershell.exe 是扫着读的（找 /c、找 -File），不含名字也能跑；
 // 但普通 exe 按位置读，第一个词就是它自己的名字——少了名字，参数全体错位，且零报错。
+//
+// wantPath 只比**文件名**，不比完整路径：BuildCommand 用的是 exec.LookPath，
+// 它返回的是系统自己解析出来的绝对路径（前缀 C:\Windows\System32\ 之类）。
+// 那个前缀归操作系统管，不是这里要定的事，这里要定的只是「挑的是哪个 exe」。
 func TestBuildCommand(t *testing.T) {
 	dir := fixtures(t)
 	batPath := filepath.Join(dir, "run.bat")
@@ -84,13 +88,13 @@ func TestBuildCommand(t *testing.T) {
 			// 实测（2026-09-19）：CmdLine 不带引号时 argv[0] 只到 "\my"，"--fast" 被挤到 argv[2]。
 			name: "exe 有 args",
 			kind: "exe", target: exePath, args: "--fast",
-			wantPath: exePath,
+			wantPath: "app.exe",
 			want:     `"` + exePath + `" --fast`,
 		},
 		{
 			name: "exe 无 args",
 			kind: "exe", target: exePath, args: "",
-			wantPath: exePath,
+			wantPath: "app.exe",
 			want:     `"` + exePath + `"`,
 		},
 		{
@@ -100,6 +104,40 @@ func TestBuildCommand(t *testing.T) {
 			wantPath: "cmd.exe",
 			want:     `cmd.exe /d /s /c dir /b`,
 		},
+		// —— 常驻终端 ——
+		// 这两个 kind 的 target 是**选填**的：空 = 开个空终端等敲，填了 = 先跑它再停在提示符。
+		// 下面四条 want 是在 Windows 上对着真 cmd.exe / powershell.exe 跑出来的，
+		// 不是从实现反推的。
+		{
+			// 空 target：光一个 /k，后面没有命令，cmd 起完就停在提示符
+			name: "terminal-cmd 空 target",
+			kind: "terminal-cmd", target: "", args: "",
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /k`,
+		},
+		{
+			// 填了 target：跑完它，但**不退出**。这里挡着的是 /k 放错位置 ——
+			// 写成 /k /d /s /c 的话，/k 会把后面整行当命令执行，报「/d 不是命令」。
+			name: "terminal-cmd 有 target",
+			kind: "terminal-cmd", target: batPath, args: "",
+			wantPath: "cmd.exe",
+			want:     `cmd.exe /d /s /k ""` + batPath + `""`,
+		},
+		{
+			// PowerShell 那边对应 cmd 的 /k 的是 -NoExit（没有 -Command 时不需要它，
+			// 带上也没坏处，这里跟有 target 的那条保持同一个骨架）
+			name: "terminal-powershell 空 target",
+			kind: "terminal-powershell", target: "", args: "",
+			wantPath: "powershell.exe",
+			want:     `powershell.exe -NoLogo -NoProfile`,
+		},
+		{
+			// -NoExit 是关键：没有它，-Command 跑完就退出了，不是「常驻终端」
+			name: "terminal-powershell 有 target",
+			kind: "terminal-powershell", target: "Get-Date", args: "",
+			wantPath: "powershell.exe",
+			want:     `powershell.exe -NoLogo -NoProfile -NoExit -Command "Get-Date"`,
+		},
 	}
 
 	for _, c := range cases {
@@ -108,8 +146,8 @@ func TestBuildCommand(t *testing.T) {
 			if err != nil {
 				t.Fatalf("意外报错: %v", err)
 			}
-			if got.Path != c.wantPath {
-				t.Errorf("Path 不对\n  得到: %s\n  期望: %s", got.Path, c.wantPath)
+			if filepath.Base(got.Path) != c.wantPath {
+				t.Errorf("Path 不对\n  得到: %s\n  期望（文件名）: %s", got.Path, c.wantPath)
 			}
 			if got.CmdLine != c.want {
 				t.Errorf("拼出来的命令行不对\n  得到: %s\n  期望: %s", got.CmdLine, c.want)
@@ -123,10 +161,15 @@ func TestBuildCommandUnknownKind(t *testing.T) {
 	if err == nil {
 		t.Fatal("Kind 不认识时应该返回 error，实际返回了 nil")
 	}
-	// Kind 校验挡在 os.Stat 前面：这里的路径也不存在，但报的必须是 Kind 的错。
+	// Kind 校验挡在 os.Stat 前面：这里的 Target 也不存在，但报的必须是 Kind 的错。
 	// 否则 Kind 打错的人会收到"脚本不存在"，照着去查文件，方向直接跑偏。
-	if !strings.Contains(err.Error(), "bat") {
-		t.Errorf("应该报 Kind 不支持，实际: %v", err)
+	//
+	// 所以这里只断言「报的不是 target 的错」——**不挑具体措辞**。
+	// 早先这行是 strings.Contains(err.Error(), "bat")，逼着实现必须把支持的类型
+	// 一个个抄进错误信息里：加一个 kind 就要记得改句子，忘了没人拦得住，只有测试红。
+	// 措辞是给人看的，不是接口。
+	if strings.Contains(err.Error(), "target is missing") {
+		t.Errorf("应该报 Kind 不认识，却报了 target 的问题，方向会跑偏: %v", err)
 	}
 }
 
