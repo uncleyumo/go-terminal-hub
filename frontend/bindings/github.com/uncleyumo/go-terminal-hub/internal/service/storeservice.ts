@@ -7,32 +7,36 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as store$0 from "./internal/exec/store/models.js";
+import * as store$0 from "../exec/store/models.js";
 
 export function CreateSession(d: store$0.DataStore): $CancellablePromise<string> {
-    return $Call.ByID(4268836328, d);
+    return $Call.ByID(3351316327, d);
 }
 
 export function DeleteSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3139028285, id);
+    return $Call.ByID(152668662, id);
 }
 
 export function GetSession(id: string): $CancellablePromise<store$0.DataStore> {
-    return $Call.ByID(2478346128, id);
+    return $Call.ByID(3965771337, id);
 }
 
 export function GetSettings(): $CancellablePromise<store$0.Settings> {
-    return $Call.ByID(2899298809);
+    return $Call.ByID(893564082);
 }
 
 export function ListSessions(): $CancellablePromise<store$0.DataStore[] | null> {
-    return $Call.ByID(168441053);
+    return $Call.ByID(3718978072);
+}
+
+export function ReorderSessions(ids: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(3106040301, ids);
 }
 
 export function SaveSettings(settings: store$0.Settings): $CancellablePromise<void> {
-    return $Call.ByID(1891988456, settings);
+    return $Call.ByID(2881436397, settings);
 }
 
 export function UpdateSession(id: string, d: store$0.DataStore): $CancellablePromise<string> {
-    return $Call.ByID(1645521419, id, d);
+    return $Call.ByID(1962699912, id, d);
 }

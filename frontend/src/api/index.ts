@@ -1,6 +1,6 @@
 // 唯一碰 bindings 的地方。组件只 import 这里的函数，不直接 import bindings。
 import { Events } from '@wailsio/runtime'
-import { AppService, HubService, StoreService } from '../../bindings/github.com/uncleyumo/go-terminal-hub'
+import { AppService, HubService, StoreService } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service'
 import type { DataStore } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { Settings } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { RecordStatus } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/hub/models'
@@ -109,6 +109,38 @@ export function stopAllSessions(): Promise<void> {
 
 export function quitApp(): Promise<void> {
   return AppService.QuitApp()
+}
+
+// —— 会话工具条的下拉菜单（D47 / D50）——
+// 四个 AppService 方法，都是「拿一个会话 id 干一件事」。
+//
+// ⚠️ 后端 error 一律英文直出（D22 那条欠账就是这个），**不承载用户文案**。
+// 所以翻译放在调用方：谁调谁负责按「哪个方法失败」给一句人话，
+// 不用去猜后端那句英文是什么意思。
+export function openScriptDir(id: string): Promise<void> {
+  return AppService.OpenScriptDir(id)
+}
+
+export function openWorkDir(id: string): Promise<void> {
+  return AppService.OpenWorkDir(id)
+}
+
+export function resolveWorkDir(id: string): Promise<string> {
+  return AppService.ResolveWorkDir(id)
+}
+
+// 「这条会话实际会跑什么」—— 用户拿它核对命令行。
+// ⚠️ 后端是从**运行中的**会话里读的（`hub.GetSession` → `GetLaunchSpec`），
+// 所以没启动过的会话会 reject，这是设计如此，不是出错。
+export function resolveSpecCommandLine(id: string): Promise<string> {
+  return AppService.ResolveSpecCommandLine(id)
+}
+
+// 侧栏拖动排序。**ids 必须是全部会话的 id，一个不多一个不少**——
+// 后端 `Store.ReorderSessions` 拿 `len(ids)` 跟 `len(dataList)` 比，
+// 少一个就整条报错。少传了不会静默出错，会 reject，前端 catch 里重新 load 一次就恢复原样。
+export function reorderSessions(ids: string[]): Promise<void> {
+  return StoreService.ReorderSessions(ids)
 }
 
 // —— 事件：只有这里认 wails 的事件名，组件只认这三个函数 ——

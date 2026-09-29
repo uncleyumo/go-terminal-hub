@@ -6,6 +6,7 @@
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { resizeSession, writeSession } from '../api'
+import { getAppBackground, getBackground, prefersDarkText, withBackground } from './background'
 
 interface Entry {
   term: Terminal
@@ -65,14 +66,53 @@ const PALETTES: Record<'light' | 'dark', ITheme> = {
 }
 
 /** 跟着 <html data-theme> 走；没写过就当深色 */
-function currentPalette(): ITheme {
-  return PALETTES[document.documentElement.dataset.theme === 'light' ? 'light' : 'dark']
+function appTheme(): 'light' | 'dark' {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+}
+
+/**
+ * 这条会话现在该用哪套配色。三层，后者盖前者：
+ *
+ *   1. 这条会话自己设过的底色      —— 会话工具条里改的，只影响这一条
+ *   2. 全局默认底色                —— 顶栏主题菜单里改的，影响所有**没单独设过**的会话
+ *   3. 主题自带的那套              —— 浅色 / 深色
+ *
+ * 底色一旦定了，**亮暗说了算**：亮底配浅色主题那套 ANSI 色，暗底配深色那套。
+ * 不跟着底色走的话，浅底上那套为深底调的淡黄、淡青会洗掉看不见。
+ * 用户只该挑一个颜色，剩下的由程序定（D48）。
+ */
+function themeFor(id: string, app: 'light' | 'dark' = appTheme()): ITheme {
+  const custom = getBackground(id) ?? getAppBackground()
+  if (!custom) return PALETTES[app]
+  const base = prefersDarkText(custom) ? PALETTES.light : PALETTES.dark
+  return withBackground(base, custom)
 }
 
 /** 切主题时把**已经建好**的终端一起换掉，否则旧会话会留着上一套颜色 */
 export function setTerminalPalette(theme: 'light' | 'dark') {
-  for (const entry of entries.values()) {
-    entry.term.options.theme = PALETTES[theme]
+  for (const [id, entry] of entries) {
+    entry.term.options.theme = themeFor(id, theme)
+  }
+}
+
+/**
+ * 改某条会话的底色。没建过终端（还没打开过）就什么都不做 ——
+ * 它下次建的时候自己会读 localStorage。
+ */
+export function setSessionBackground(id: string, hex: string | null) {
+  const entry = entries.get(id)
+  if (!entry) return
+  entry.term.options.theme = themeFor(id)
+}
+
+/**
+ * 改全局默认底色。**全部**已经建好的终端都重算一遍 ——
+ * 单独设过底色的那几条算出来还是它们自己的（themeFor 里先看会话那份），
+ * 所以这一遍不会把用户单独做的选择刷掉。
+ */
+export function applyAppBackground() {
+  for (const [id, entry] of entries) {
+    entry.term.options.theme = themeFor(id)
   }
 }
 
@@ -90,7 +130,7 @@ function ensure(id: string): Entry {
       fontSize: 13,
       scrollback: 5000,
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
-      theme: currentPalette(),
+      theme: themeFor(id),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)

@@ -18,9 +18,21 @@ const props = defineProps<{
   options: MenuOption[]
   /** 无障碍名，也是 tooltip 文案 */
   label: string
+  /**
+   * 面板底部的一个**普通动作项** —— 不是这几个值里的一个。
+   *
+   * 主题菜单以前只有「浅/深/跟随系统」三选一，现在底下要挂一个「终端背景色…」。
+   * 那个不是主题值（点它不改变当前选中项，只是打开另一个东西），
+   * 所以不能塞进 `options`：塞进去的话它会跟着 `modelValue` 变选中态、打对勾，
+   * 而它压根没有「选中」这回事。
+   */
+  action?: { label: string; icon: string }
 }>()
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+  action: []
+}>()
 
 const trigger = useTemplateRef<HTMLElement>('trigger')
 // 菜单本体 Teleport 到 body，不在 trigger 里面 —— 点菜单项时必须单独认它，
@@ -40,9 +52,10 @@ function toggle() {
   const r = trigger.value?.getBoundingClientRect()
   if (r) {
     // 按触发器的**右**边缘往左展开：语言和主题两个按钮都贴着窗口右边缘，
-    // 按左边缘定位的话 176px 宽的菜单有一半在窗口外面（学习者 2026-09-28 指出过）。
-    // 最后再夹一次窗口宽度，窗口拉窄也不会被裁掉。
-    const w = 176
+    // 按左边缘定位的话菜单有一半在窗口外面（学习者 2026-09-28 指出过）。
+    // 宽度 200 是给底下那个「终端背景色…」留的 —— 176 那三个主题项都放得下，
+    // 多出来的字会被截断。最后再夹一次窗口宽度，窗口拉窄也不会被裁掉。
+    const w = 200
     const aligned = Math.round(r.right - w)
     pos.value = {
       left: Math.max(8, Math.min(aligned, window.innerWidth - w - 8)),
@@ -58,6 +71,11 @@ function close() {
 
 function choose(value: string) {
   emit('update:modelValue', value)
+  close()
+}
+
+function chooseAction() {
+  emit('action')
   close()
 }
 
@@ -116,7 +134,7 @@ onBeforeUnmount(() => {
           v-if="open"
           ref="panel"
           role="menu"
-          class="fixed z-50 w-[176px] overflow-hidden rounded-lg border border-line-strong bg-overlay p-1 shadow-lg shadow-black/15"
+          class="fixed z-50 w-[200px] overflow-hidden rounded-lg border border-line-strong bg-overlay p-1 shadow-lg shadow-black/15"
           :style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
         >
           <button
@@ -142,6 +160,20 @@ onBeforeUnmount(() => {
               class="text-accent"
             />
           </button>
+
+          <!-- 普通动作项：跟上面那三个不是一类东西，中间用一条线分开 -->
+          <template v-if="props.action">
+            <div class="my-1 h-px bg-line" />
+            <button
+              type="button"
+              role="menuitem"
+              class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-xs text-ink-dim transition-colors duration-100 hover:bg-raised hover:text-ink"
+              @click="chooseAction"
+            >
+              <UIcon :name="props.action.icon" :size="14" />
+              <span class="flex-1">{{ props.action.label }}</span>
+            </button>
+          </template>
         </div>
       </Transition>
     </Teleport>

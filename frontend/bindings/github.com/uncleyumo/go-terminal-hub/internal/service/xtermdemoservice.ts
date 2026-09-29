@@ -5,6 +5,10 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
-export function Greet(name: string): $CancellablePromise<string> {
-    return $Call.ByID(1411160069, name);
+export function StartSession(): $CancellablePromise<void> {
+    return $Call.ByID(4029537457);
+}
+
+export function StopSession(): $CancellablePromise<void> {
+    return $Call.ByID(1226961247);
 }

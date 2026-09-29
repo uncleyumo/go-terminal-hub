@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n'
 import SessionList from './components/SessionList.vue'
 import SessionForm from './components/SessionForm.vue'
 import TerminalPane from './components/TerminalPane.vue'
+import TermBackgroundDialog from './components/TermBackgroundDialog.vue'
 import UButton from './components/ui/UButton.vue'
 import UConfirmHost from './components/ui/UConfirmHost.vue'
+import UDialog from './components/ui/UDialog.vue'
+import UDropMenu from './components/ui/UDropMenu.vue'
 import UIcon from './components/ui/UIcon.vue'
 import UIconMenu from './components/ui/UIconMenu.vue'
 import USwitch from './components/ui/USwitch.vue'
@@ -13,6 +16,7 @@ import UToaster from './components/ui/UToaster.vue'
 import UTooltip from './components/ui/UTooltip.vue'
 import { confirm } from './components/ui/confirm'
 import { notify } from './components/ui/toast'
+import { Clipboard } from '@wailsio/runtime'
 import {
   deleteSession,
   getSettings,
@@ -20,7 +24,12 @@ import {
   onSessionExited,
   onSessionOutput,
   onSessionStarted,
+  openScriptDir,
+  openWorkDir,
   quitApp,
+  reorderSessions,
+  resolveSpecCommandLine,
+  resolveWorkDir,
   restartSession,
   saveSettings,
   setStartOnBoot,
@@ -31,11 +40,14 @@ import {
   type SessionView,
 } from './api'
 import {
+  applyAppBackground,
   clear as clearTerminal,
   disposeAll,
   fit as fitTerminal,
+  setSessionBackground,
   write as writeTerminal,
 } from './terminal/manager'
+import { getAppBackground, getBackground, setAppBackground, setBackground } from './terminal/background'
 import { normalizeLocale, setLocale, type AppLocale } from './i18n'
 import { applyTheme, normalizeTheme, watchSystemTheme, type ThemeMode } from './theme'
 import brandIcon from './assets/brand/icon.svg'
@@ -55,6 +67,12 @@ const locale = ref<AppLocale>('en')
 const themeMode = ref<ThemeMode>('system')
 const startOnBootBusy = ref(false)
 const refreshing = ref(false)
+
+// 色板小窗（会话级 + 全局级，两个实例）+ 「最终命令」那一条命令行的只读小窗
+const colorDialogOpen = ref(false)
+const appColorOpen = ref(false)
+const commandLineOpen = ref(false)
+const commandLine = ref('')
 
 // —— 会话栏折叠 ——
 // 收起时把整条 268px 让给终端：搜索框一起收（它筛的就是这份列表，列表没了它也没用）。
@@ -110,6 +128,136 @@ const takenNames = computed(() =>
 function select(id: string) {
   selectedId.value = id
   configOpen.value = false
+}
+
+// —— 会话工具条的下拉菜单（D47 六项）——
+//
+// kind 的两种分法（D47 他定的）：
+//   收路径 → 菜单 1、2 能用：bat cmd ps1 exe terminal-cmd terminal-powershell
+//   收命令 → 菜单 1、2 置灰：  shell terminal-shell
+// 这份名单在前端本地一份就够，不问后端 —— 后端只管执行，前端只管别让用户
+// 去点一个注定失败的动作（置灰比「点了弹个错」好）。
+// ⚠️ 别拿旧的决策记录（D45 那张表）来改这份名单，第三行当时就记错过。
+const KINDS_WITH_PATH_TARGET = new Set([
+  'bat',
+  'cmd',
+  'ps1',
+  'exe',
+  'terminal-cmd',
+  'terminal-powershell',
+])
+
+const scriptPathDisabled = computed(() => {
+  const kind = selected.value?.config.kind
+  return kind === undefined || !KINDS_WITH_PATH_TARGET.has(kind)
+})
+
+// 复制路径要的是 target 里的东西。target 是空的（常驻终端不填就是开一个空终端）
+// 就没有「路径」可复制 —— 这时候置灰，比复制一个空串到剪贴板强
+const copyScriptDisabled = computed(
+  () => scriptPathDisabled.value || (selected.value?.config.target ?? '') === '',
+)
+
+// 顺序是按**语义**分的，不是按功能凑的（学习者 2026-09-29 定的）：
+// 前五项都是「看一眼 / 拿一份 / 打开一个东西」，是一类；
+// 「背景颜色」是改外观，跟它们不是一回事，单独隔一条线。
+// 所以「最终命令」排在「背景颜色」**上面**。
+const sessionMenuItems = computed(() => [
+  { key: 'openScriptDir', label: t('menu.openScriptDir'), icon: 'folder', disabled: scriptPathDisabled.value },
+  { key: 'copyScriptPath', label: t('menu.copyScriptPath'), icon: 'file', disabled: copyScriptDisabled.value },
+  { key: 'openWorkDir', label: t('menu.openWorkDir'), icon: 'folder' },
+  { key: 'copyWorkDir', label: t('menu.copyWorkDir'), icon: 'file' },
+  { key: 'commandLine', label: t('menu.commandLine'), icon: 'terminal' },
+  { key: 'color', label: t('menu.color'), icon: 'pipette', separator: true },
+])
+
+// 复制 + 提示，一步做完。空串不给复制 ——
+// 剪贴板里留一个上次复制的东西、界面上却弹「已复制」，用户会照着那个错的用
+async function copyToClipboard(text: string, okKey: string) {
+  if (text === '') {
+    notify.error(t('msg.nothingToCopy'))
+    return
+  }
+  try {
+    await Clipboard.SetText(text)
+    notify.success(t(okKey))
+  } catch (error) {
+    notify.error(`${t('msg.copyFailed')}: ${String(error)}`)
+  }
+}
+
+async function onSessionMenu(key: string) {
+  const session = selected.value
+  if (!session) return
+  const id = session.config.id
+  try {
+    switch (key) {
+      case 'openScriptDir':
+        await openScriptDir(id)
+        break
+      case 'copyScriptPath':
+        // 纯前端：target 前端手里就有（D50），不用绕后端再要一次
+        await copyToClipboard(session.config.target, 'msg.copied')
+        break
+      case 'openWorkDir':
+        await openWorkDir(id)
+        break
+      case 'copyWorkDir':
+        await copyToClipboard(await resolveWorkDir(id), 'msg.copied')
+        break
+      case 'color':
+        colorDialogOpen.value = true
+        break
+      case 'commandLine': {
+        const line = await resolveSpecCommandLine(id)
+        commandLine.value = line === '' ? t('menu.noCommand') : line
+        commandLineOpen.value = true
+        break
+      }
+    }
+  } catch (error) {
+    // ⚠️ 后端 error 是英文的技术信息（学习者 2026-09-29 定的：error 是 debug 用的，
+    // 不承载用户文案）。所以这里按「**哪个方法**失败」给一句人话，
+    // 底下再挂一句原文方便他排查 —— 不去猜后端那句英文是什么意思
+    notify.error(`${t(MENU_ERROR_KEY[key] ?? 'msg.actionFailed')}: ${String(error)}`)
+  }
+}
+
+const MENU_ERROR_KEY: Record<string, string> = {
+  openScriptDir: 'msg.openScriptDirFailed',
+  copyScriptPath: 'msg.copyFailed',
+  openWorkDir: 'msg.openWorkDirFailed',
+  copyWorkDir: 'msg.copyFailed',
+  commandLine: 'msg.commandLineFailed',
+}
+
+// —— 终端背景色（D48）——
+// 两层：全局默认（顶栏主题菜单里改）+ 每会话单独（会话工具条里改），后者盖前者。
+// 都存 localStorage，不进后端 data.json（D46 其一：颜色留前端）。
+// 改的瞬间就往终端上生效，色板里拖一下能立刻看见，不用点「应用」
+function onBackgroundChange(id: string, hex: string | null) {
+  setBackground(id, hex)
+  setSessionBackground(id, hex)
+}
+
+function onAppBackgroundChange(hex: string | null) {
+  setAppBackground(hex)
+  // 全部终端重算一遍。没单独设过的那几条跟着变，单独设过的不动
+  // （manager 的 themeFor 里先看会话那份）
+  applyAppBackground()
+}
+
+// —— 侧栏拖动排序 ——
+// 后端要的是**全部**会话的 id（少一个就整条报错），前端保证传全。
+// 写完立刻重新读一遍：以后端的排序为准。前端本地排一遍只是给用户看个即时反馈，
+// 后端要是拒了（比如哪条被别处删了），load() 会把界面拉回真实顺序
+async function reorder(ids: string[]) {
+  try {
+    await reorderSessions(ids)
+  } catch (error) {
+    notify.error(`${t('msg.reorderFailed')}: ${String(error)}`)
+  }
+  await load()
 }
 
 async function load() {
@@ -461,11 +609,16 @@ onBeforeUnmount(() => {
         </label>
       </UTooltip>
 
+      <!-- 主题菜单底下挂「终端背景色…」：改的是**全局默认**，
+           会话工具条里那个改的是**这一条**。两层分开存、后者盖前者 ——
+           单独改过的那几条不受全局影响，全局改完没单独改过的跟着变。 -->
       <UIconMenu
         :model-value="themeMode"
         :options="themeOptions"
         :label="t('theme.label')"
+        :action="{ label: t('theme.terminalBackground'), icon: 'pipette' }"
         @update:model-value="changeTheme"
+        @action="appColorOpen = true"
       />
 
       <div class="mx-0.5 h-5 w-px bg-line"></div>
@@ -510,6 +663,7 @@ onBeforeUnmount(() => {
           @create="openCreate"
           @edit="openEdit"
           @remove="remove"
+          @reorder="reorder"
           @toggle-sidebar="toggleSidebar"
         />
       </aside>
@@ -577,6 +731,15 @@ onBeforeUnmount(() => {
                 @click="configOpen = !configOpen"
               />
             </UTooltip>
+            <!-- 下拉挂在「配置」左边：两个都是「展开更多」的动作，
+                 Start/Stop/Restart 是一等公民，不该被挤到折叠区里去 -->
+            <UDropMenu
+              :items="sessionMenuItems"
+              icon="more"
+              :label="t('menu.label')"
+              align="right"
+              @select="onSessionMenu"
+            />
             <UButton
               variant="primary"
               size="sm"
@@ -678,5 +841,46 @@ onBeforeUnmount(() => {
     <SessionForm v-model="formVisible" :session="editing" :taken-names="takenNames" @saved="load" />
     <UToaster />
     <UConfirmHost />
+
+    <!-- 会话级色板。没单独设过的会话 initial = null，
+         色板打开在**全局默认**上（全局也没设就是主题自带的那个），
+         不是随便一个深色 -->
+    <TermBackgroundDialog
+      v-if="selected"
+      v-model="colorDialogOpen"
+      :initial="getBackground(selected.config.id)"
+      :fallback="getAppBackground()"
+      :title="t('menu.color')"
+      @change="onBackgroundChange(selected.config.id, $event)"
+    />
+
+    <!-- 全局默认色板。改的是「所有没单独设过的会话」，
+         已经单独设过的那几条不受影响 -->
+    <TermBackgroundDialog
+      v-model="appColorOpen"
+      :initial="getAppBackground()"
+      :title="t('theme.terminalBackgroundTitle')"
+      @change="onAppBackgroundChange"
+    />
+
+    <!-- 最终命令：只给看，不给改。用户在这里核对拼出来的那条对不对 -->
+    <UDialog
+      v-model="commandLineOpen"
+      :title="t('menu.commandLine')"
+      width="640px"
+    >
+      <pre
+        class="max-h-[40vh] overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-ink"
+        >{{ commandLine }}</pre
+      >
+      <template #footer>
+        <UButton variant="default" size="sm" @click="commandLineOpen = false">
+          {{ t('action.close') }}
+        </UButton>
+        <UButton variant="primary" size="sm" @click="copyToClipboard(commandLine, 'msg.copied')">
+          {{ t('menu.copyCommandLine') }}
+        </UButton>
+      </template>
+    </UDialog>
   </div>
 </template>

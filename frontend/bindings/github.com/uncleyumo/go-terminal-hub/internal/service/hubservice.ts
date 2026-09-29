@@ -7,32 +7,32 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as hub$0 from "./internal/exec/hub/models.js";
+import * as hub$0 from "../exec/hub/models.js";
 
 export function ListStatus(): $CancellablePromise<hub$0.RecordStatus[] | null> {
-    return $Call.ByID(2406979344);
+    return $Call.ByID(291041921);
 }
 
 export function ResizeSession(id: string, cols: number, rows: number): $CancellablePromise<void> {
-    return $Call.ByID(3012637930, id, cols, rows);
+    return $Call.ByID(3713270193, id, cols, rows);
 }
 
 export function RestartSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(425209671, id);
+    return $Call.ByID(802803738, id);
 }
 
 export function StartSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3998795598, id);
+    return $Call.ByID(1650137335, id);
 }
 
 export function StopAllSessions(): $CancellablePromise<void> {
-    return $Call.ByID(3765323104);
+    return $Call.ByID(3318317055);
 }
 
 export function StopSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(871503534, id);
+    return $Call.ByID(740482977, id);
 }
 
 export function WriteSession(id: string, data: string): $CancellablePromise<number> {
-    return $Call.ByID(1056708111, id, data);
+    return $Call.ByID(476592342, id, data);
 }

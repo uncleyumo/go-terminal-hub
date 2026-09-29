@@ -92,7 +92,7 @@ func (s *StoreService) SaveSettings(settings store.Settings) error {
 	return nil
 }
 
-func (s *StoreService) reorderSessions(ids []string) error {
+func (s *StoreService) ReorderSessions(ids []string) error {
 	useStore, err := store.GetStore()
 	if err != nil {
 		return errors.Errorf("get store error when save settings: %v", err)

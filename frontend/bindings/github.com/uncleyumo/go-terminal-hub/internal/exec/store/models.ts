@@ -14,6 +14,7 @@ export interface DataStore {
     "cols": number;
     "rows": number;
     "autoStart": boolean;
+    "sortOrder": number;
 }
 
 export interface Settings {

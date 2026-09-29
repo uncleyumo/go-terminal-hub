@@ -318,6 +318,10 @@ function toDataStore(): DataStore {
     cols: form.cols,
     rows: form.rows,
     autoStart: form.autoStart,
+    // 编辑时必须把原来的顺序号原样带回去：`updateSession` 走的是 Store.Update，
+    // 那是**整个替换**不是合并，这里填 0 会把这条会话的侧栏位置抹掉。
+    // 新建填 0 无所谓——后端按 ID 排的兜底分支会接管。
+    sortOrder: props.session?.config.sortOrder ?? 0,
   }
 }
 
