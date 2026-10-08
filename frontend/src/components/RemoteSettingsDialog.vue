@@ -10,7 +10,12 @@ import UDialog from './ui/UDialog.vue'
 import UInput from './ui/UInput.vue'
 import USwitch from './ui/USwitch.vue'
 import { notify } from './ui/toast'
-import { generateRemoteToken, type RemoteStatus } from '../api'
+import {
+  generateRemoteToken,
+  testRemoteConnection,
+  type RemoteProbeResult,
+  type RemoteStatus,
+} from '../api'
 import { Clipboard } from '@wailsio/runtime'
 
 export interface RemoteConfig {
@@ -41,8 +46,17 @@ const draft = ref<RemoteConfig>({ ...props.config })
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) draft.value = { ...props.config }
+    if (open) {
+      draft.value = { ...props.config }
+      probe.value = null
+    }
   },
+)
+
+// 改了地址或令牌，上一次的测试结果就不算数了——留着会让人以为新填的也通过了
+watch(
+  () => [draft.value.url, draft.value.token],
+  () => (probe.value = null),
 )
 
 // 启用时才需要填地址和令牌，没启用的时候这两个字段是灰的
@@ -81,6 +95,37 @@ async function onGenerate() {
     draft.value.token = await generateRemoteToken()
   } catch (error) {
     notify.error(String(error))
+  }
+}
+
+// 「测试连接」：拿当前填在框里的地址和令牌真拨一次，不落盘。
+//
+// 为什么值得有：地址填错、令牌多复制了一个空格、反代没转发 Upgrade 头，
+// 这三种错在界面上长得一模一样——都是「连接失败」。真拨一次能当场分清。
+const testing = ref(false)
+const probe = ref<RemoteProbeResult | null>(null)
+
+const canTest = computed(
+  () => draft.value.url.trim() !== '' && draft.value.token.trim() !== '',
+)
+
+const probeText = computed(() => {
+  const r = probe.value
+  if (!r) return ''
+  if (!r.ok) return r.message || t('remote.status.error')
+  return r.already ? t('remote.testAlready') : t('remote.testOk')
+})
+
+async function onTest() {
+  if (testing.value) return
+  testing.value = true
+  probe.value = null
+  try {
+    probe.value = await testRemoteConnection(draft.value.url.trim(), draft.value.token.trim())
+  } catch (error) {
+    probe.value = { ok: false, already: false, message: String(error) }
+  } finally {
+    testing.value = false
   }
 }
 
@@ -141,6 +186,22 @@ function onSave() {
             </UButton>
           </div>
           <div class="mt-1 text-[11px] leading-4 text-ink-faint">{{ t('remote.tokenHint') }}</div>
+        </div>
+
+        <!-- 真拨一次。地址错、令牌多个空格、反代没转发 Upgrade 头，
+             这三种在界面上都是同一句「连接失败」，不试分不清。 -->
+        <div class="flex items-center gap-2">
+          <UButton variant="default" size="sm" :disabled="!canTest || testing" @click="onTest">
+            {{ testing ? t('remote.testing') : t('remote.test') }}
+          </UButton>
+          <span
+            v-if="probeText"
+            class="min-w-0 flex-1 truncate text-[11px]"
+            :class="probe?.ok ? 'text-pos' : 'text-neg'"
+            :title="probeText"
+          >
+            {{ probeText }}
+          </span>
         </div>
 
         <label class="flex items-center gap-3">

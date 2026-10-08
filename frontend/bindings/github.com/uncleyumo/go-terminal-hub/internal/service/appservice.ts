@@ -8,6 +8,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as buildinfo$0 from "../buildinfo/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as paste$0 from "../paste/models.js";
+
+/**
+ * ClearPasteCache 清掉图片缓存，返回清掉了多少。
+ */
+export function ClearPasteCache(): $CancellablePromise<paste$0.Info> {
+    return $Call.ByID(2844164103);
+}
 
 export function GetAppWorkDir(): $CancellablePromise<string> {
     return $Call.ByID(166898860);
@@ -15,6 +25,13 @@ export function GetAppWorkDir(): $CancellablePromise<string> {
 
 export function GetBuildInfo(): $CancellablePromise<buildinfo$0.BuildInfo> {
     return $Call.ByID(2047417435);
+}
+
+/**
+ * GetPasteCacheInfo 给「关于」弹窗显示手机发来的图片占了多少地方。
+ */
+export function GetPasteCacheInfo(): $CancellablePromise<paste$0.Info> {
+    return $Call.ByID(1887585030);
 }
 
 export function GetStartOnBootStatus(): $CancellablePromise<boolean> {

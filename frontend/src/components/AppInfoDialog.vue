@@ -5,14 +5,21 @@
 // 链接器在 go build 时把 build/windows/Taskfile.yml 里算出来的两个值用 -X
 // 写进 Go 的包级字符串变量，前端只是转个手。所以这里不用、也不该去 import
 // 任何 npm 上的 package.json 版本 —— 那是前端的版本，跟 exe 不是一回事。
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Browser } from '@wailsio/runtime'
 import UButton from './ui/UButton.vue'
 import UDialog from './ui/UDialog.vue'
 import UIcon from './ui/UIcon.vue'
 import UTooltip from './ui/UTooltip.vue'
-import { getBuildInfo, type BuildInfo } from '../api'
+import { notify } from './ui/toast'
+import {
+  clearPasteCache,
+  getBuildInfo,
+  getPasteCacheInfo,
+  type BuildInfo,
+  type PasteCacheInfo,
+} from '../api'
 import brandIcon from '../assets/brand/icon.svg'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -41,7 +48,47 @@ function formatBuildTime(raw: string): string {
   return `${m[1]} ${m[2]}${zone}`
 }
 
-// 打开时才去取：这两个值编译完就定死了，不会变，弹窗关着的时候没必要调后端
+// 图片缓存：手机在远程终端里发的图会落到 ~/.go-terminal-hub/paste 下，
+// 不会自己过期，所以给一个清空入口。空的时候按钮是灰的。
+const cache = ref<PasteCacheInfo | null>(null)
+const clearing = ref(false)
+
+const cacheText = computed(() => {
+  const c = cache.value
+  if (!c || !c.files) return t('app.infoCacheEmpty')
+  return `${c.files} · ${formatBytes(c.bytes ?? 0)}`
+})
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function refreshCache() {
+  getPasteCacheInfo()
+    .then((v) => (cache.value = v))
+    .catch((error) => console.warn('get paste cache info failed:', error))
+}
+
+async function clearCache() {
+  if (clearing.value) return
+  clearing.value = true
+  try {
+    const removed = await clearPasteCache()
+    const files = removed?.files ?? 0
+    const size = formatBytes(removed?.bytes ?? 0)
+    refreshCache()
+    notify.success(t('app.infoCacheCleared', { files, size }))
+  } catch (error) {
+    notify.error(`${t('app.infoCacheClearFailed')}: ${String(error)}`)
+  } finally {
+    clearing.value = false
+  }
+}
+
+// 打开时才去取：版本号那两个值编译完就定死了，不会变，弹窗关着的时候没必要调后端。
+// 缓存大小倒是会变，所以每次打开都重新问一次。
 watch(
   () => props.modelValue,
   (open) => {
@@ -53,6 +100,7 @@ watch(
         console.warn('get build info failed:', error)
         failed.value = true
       })
+    refreshCache()
   },
 )
 
@@ -115,6 +163,21 @@ function writeEmail() {
               @click="writeEmail"
             />
           </UTooltip>
+        </dd>
+      </div>
+
+      <div class="flex items-center gap-3 py-2">
+        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoCache') }}</dt>
+        <dd class="flex min-w-0 flex-1 items-center gap-1">
+          <span class="min-w-0 flex-1 font-mono text-[12px] text-ink">{{ cacheText }}</span>
+          <UButton
+            variant="default"
+            size="sm"
+            :disabled="!cache?.files || clearing"
+            @click="clearCache"
+          >
+            {{ t('app.infoCacheClear') }}
+          </UButton>
         </dd>
       </div>
     </dl>

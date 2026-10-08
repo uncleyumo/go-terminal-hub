@@ -1,11 +1,14 @@
 package remote
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
+	"github.com/uncleyumo/go-terminal-hub/internal/paste"
 	"github.com/uncleyumo/go-terminal-hub/remote/protocol"
 )
 
@@ -417,4 +421,93 @@ func TestRepaintDoesNotError(t *testing.T) {
 	p.send(protocol.Message{Type: protocol.TypeRepaint})
 	p.send(protocol.Message{Type: protocol.TypeList})
 	p.assertNoErrorUntil(protocol.TypeSessions, 5*time.Second)
+}
+
+// --- 发图 -------------------------------------------------------------------
+
+// 1×1 的透明 PNG，够短又能过文件头判断
+var testPNG = []byte{
+	0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
+	0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89,
+}
+
+func countCacheFiles(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir(paste.Dir())
+	if err != nil {
+		return 0 // 目录还不存在，就是零个
+	}
+	return len(entries)
+}
+
+func uploadMsg(data []byte) protocol.Message {
+	return protocol.Message{
+		Type:      protocol.TypeUpload,
+		MediaType: "image/png",
+		Data:      base64.StdEncoding.EncodeToString(data),
+	}
+}
+
+// 控制方能发图，旁观方不能。
+//
+// 闸门必须在后端：按钮藏起来不算权限，手机端改一行 JS 就能绕过去，
+// 而这条路径是「往本机磁盘写文件」。
+func TestBridgeUploadRespectsLease(t *testing.T) {
+	h := newTestSession(t)
+	p := setup(t, h, Config{})
+
+	p.send(protocol.Message{Type: protocol.TypeAttach, ID: testSessionID})
+	p.recv(protocol.TypeAttached, 5*time.Second, nil)
+
+	// 1. 还是旁观方：要报错，而且不能真的落盘。
+	//    比的是「多了几个」而不是「是不是空的」——缓存目录是跨用例共用的，
+	//    -count=2 跑第二遍时里面本来就躺着上一遍留下的文件。
+	before := countCacheFiles(t)
+	p.send(uploadMsg(testPNG))
+	if m := p.recv(protocol.TypeError, 5*time.Second, nil); m.Msg == "" {
+		t.Error("旁观方发图应当被拒，并且说清原因")
+	}
+	if after := countCacheFiles(t); after != before {
+		t.Errorf("旁观方发图之后缓存目录多了 %d 个文件，应当一个都没多", after-before)
+	}
+
+	// 2. 接管之后可以发
+	p.send(protocol.Message{Type: protocol.TypeTakeover})
+	p.recv(protocol.TypeLease, 5*time.Second, nil)
+
+	p.send(uploadMsg(testPNG))
+	uploaded := p.recv(protocol.TypeUploaded, 5*time.Second, nil)
+
+	// 后缀必须是 .png —— claude code 是按后缀认图片的，存成 .tmp 等于白存
+	if !strings.HasSuffix(uploaded.Path, ".png") {
+		t.Fatalf("回过来的路径 = %q, want .png 结尾", uploaded.Path)
+	}
+	if filepath.Dir(uploaded.Path) != paste.Dir() {
+		t.Errorf("文件落在 %q，want %q（不在这里就清不掉）", filepath.Dir(uploaded.Path), paste.Dir())
+	}
+	got, err := os.ReadFile(uploaded.Path)
+	if err != nil {
+		t.Fatalf("回过来的路径读不到文件: %v", err)
+	}
+	if !bytes.Equal(got, testPNG) {
+		t.Error("存下来的字节和发过来的不一样")
+	}
+}
+
+// 不是图片的字节不该被写成文件——否则这个接口就是个通用文件上传通道。
+func TestBridgeUploadRejectsNonImage(t *testing.T) {
+	h := newTestSession(t)
+	p := setup(t, h, Config{})
+
+	p.send(protocol.Message{Type: protocol.TypeAttach, ID: testSessionID})
+	p.recv(protocol.TypeAttached, 5*time.Second, nil)
+	p.send(protocol.Message{Type: protocol.TypeTakeover})
+	p.recv(protocol.TypeLease, 5*time.Second, nil)
+
+	p.send(uploadMsg([]byte("#!/bin/sh\nrm -rf /\n")))
+	if m := p.recv(protocol.TypeError, 5*time.Second, nil); m.Msg == "" {
+		t.Error("非图片数据应当被拒，并且说清原因")
+	}
 }

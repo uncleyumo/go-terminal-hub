@@ -10,6 +10,7 @@ import (
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
+	"github.com/uncleyumo/go-terminal-hub/internal/paste"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -134,4 +135,19 @@ func (a *AppService) OpenScriptDir(id string) error {
 
 func (a *AppService) GetBuildInfo() buildinfo.BuildInfo {
 	return buildinfo.Info()
+}
+
+// GetPasteCacheInfo 给「关于」弹窗显示手机发来的图片占了多少地方。
+func (a *AppService) GetPasteCacheInfo() paste.Info {
+	info, err := paste.Stat()
+	if err != nil {
+		// 数不出来就当空的：这是个只读的展示值，不值得把弹窗搞成错误页
+		return paste.Info{}
+	}
+	return info
+}
+
+// ClearPasteCache 清掉图片缓存，返回清掉了多少。
+func (a *AppService) ClearPasteCache() (paste.Info, error) {
+	return paste.Clear()
 }

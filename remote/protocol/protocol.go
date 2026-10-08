@@ -34,9 +34,20 @@ const (
 	// 以为的画面错开了——而且不会自己纠正。抖一下尺寸会让它重绘整屏。
 	TypeRepaint MsgType = "repaint"
 
+	// TypeUpload 把一张图存到 hub 那台机器上。
+	//
+	// 走文本帧而不是二进制帧：二进制帧那条路已经被键盘输入占满了，
+	// 而发图是低频操作，多 33% 的 base64 开销换一条独立的通道，值。
+	TypeUpload MsgType = "upload"
+
 	// hub → 浏览器
 	TypeSessions MsgType = "sessions"
 	TypeAttached MsgType = "attached"
+	// TypeUploaded 图存好了，Path 是它在 hub 那台机器上的位置。
+	//
+	// 只回路径、不代插终端：路径要不要裹成 bracketed paste 取决于终端里的
+	// 程序有没有开那个模式，而那个状态只有浏览器那侧的 xterm 知道。
+	TypeUploaded MsgType = "uploaded"
 	TypeLease    MsgType = "lease" // 控制方变了
 	TypeSize     MsgType = "size"  // PTY 尺寸变了
 	TypeStarted  MsgType = "started"
@@ -102,6 +113,11 @@ type Message struct {
 	Rows       uint16 `json:"rows,omitempty"`
 
 	Sessions []SessionInfo `json:"sessions,omitempty"`
+
+	// 发图用。Data 是图片的 base64，Path 是 hub 存好之后的位置。
+	Data      string `json:"data,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
+	Path      string `json:"path,omitempty"`
 
 	Code   int    `json:"code,omitempty"`
 	ErrMsg string `json:"errMsg,omitempty"`

@@ -19,6 +19,11 @@ export type ControlMessage = {
   cols?: number
   rows?: number
   sessions?: SessionInfo[]
+  /** 发图用：图片的 base64。 */
+  data?: string
+  mediaType?: string
+  /** 后端存好图之后回过来的路径。 */
+  path?: string
   code?: number
   errMsg?: string
   msg?: string
@@ -260,6 +265,17 @@ export class HubClient {
    */
   repaint() {
     this.send({ t: 'repaint' })
+  }
+
+  /**
+   * 把一张图发给后端存到本机。
+   *
+   * 后端存完会回一条 `uploaded`，带路径。**插入终端那一步不在这里做** ——
+   * 路径要不要裹成 bracketed paste，取决于终端里的程序有没有开那个模式，
+   * 而那个状态只有本地这个 xterm 知道。见 TerminalView 的 insertPath。
+   */
+  upload(data: string, mediaType: string) {
+    this.send({ t: 'upload', data, mediaType })
   }
 
   start(id: string) {

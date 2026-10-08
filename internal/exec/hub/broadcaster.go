@@ -37,14 +37,18 @@ type broadcaster struct {
 	ring *Ring
 	emit session.Sink
 	subs map[Subscriber]struct{}
+	// tap 是所属 Hub 的观察者槽。通知要投给谁在入队时就定下来，
+	// 所以这里拿的是指针而不是去查全局。
+	tap *tapHolder
 }
 
-func newBroadcaster(id string, capacity int, emit session.Sink) *broadcaster {
+func newBroadcaster(id string, capacity int, emit session.Sink, tap *tapHolder) *broadcaster {
 	return &broadcaster{
 		id:   id,
 		ring: NewRing(capacity),
 		emit: emit,
 		subs: make(map[Subscriber]struct{}),
+		tap:  tap,
 	}
 }
 
@@ -65,7 +69,7 @@ func (b *broadcaster) OnStarted(id string) {
 	b.emit.OnStarted(id)
 	b.mu.Unlock()
 
-	notifyTap(func(t Tap) { t.OnStarted(id) })
+	notifyTap(b.tap, func(t Tap) { t.OnStarted(id) })
 }
 
 func (b *broadcaster) OnProcessExited(res executor.ExitResult) {
@@ -77,7 +81,7 @@ func (b *broadcaster) OnProcessExited(res executor.ExitResult) {
 	id := b.id
 	b.mu.Unlock()
 
-	notifyTap(func(t Tap) { t.OnExited(id, res) })
+	notifyTap(b.tap, func(t Tap) { t.OnExited(id, res) })
 }
 
 // subscribe 把 s 挂上，并交出该会话的环形缓冲。

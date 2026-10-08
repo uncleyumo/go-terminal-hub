@@ -791,13 +791,14 @@ onBeforeUnmount(() => {
       <div class="mx-0.5 h-5 w-px bg-line"></div>
 
       <!-- 远程接管：一个可开可关的可选功能，默认关着。
-           开着的时候状态点会亮，一眼能看出手机在不在线。 -->
+           开着的时候状态点会亮，一眼能看出手机在不在线。
+           图标用链环不用地球：左边那个语言切换已经是地球了。 -->
       <UTooltip :content="t('remote.title')">
         <UButton
           variant="ghost"
           size="sm"
           square
-          icon="globe"
+          icon="link"
           :aria-label="t('remote.title')"
           :class="remoteStatus?.state === 'connected' && 'text-pos'"
           @click="remoteOpen = true"

@@ -26,6 +26,12 @@ export default {
     infoWrite: '用邮件联系',
     infoFailed: '读不到版本信息（后端没绑上）',
     repository: '打开 GitHub 仓库',
+    // 手机在远程终端里发的图片会落在这里，不会自己消失
+    infoCache: '图片缓存',
+    infoCacheEmpty: '空',
+    infoCacheClear: '清理',
+    infoCacheCleared: '已清理 {files} 个文件，释放 {size}',
+    infoCacheClearFailed: '清理失败',
   },
   theme: {
     label: '主题',
@@ -105,6 +111,10 @@ export default {
     autoTakeover: '手机连上后自动接管',
     autoTakeoverHint:
       '默认关闭：手机连上先是只读旁观，点「接管」才拿到输入权。开启后连上即接管，少点一下。',
+    test: '测试连接',
+    testing: '测试中…',
+    testOk: '连上了',
+    testAlready: '已经连着这个地址了',
     statusLabel: '连接状态',
     controlledByWeb: '手机正在控制这个会话',
     takeBack: '收回控制',

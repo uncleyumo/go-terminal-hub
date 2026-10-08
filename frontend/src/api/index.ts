@@ -10,6 +10,8 @@ import type { LeasePayload } from '../../bindings/github.com/uncleyumo/go-termin
 import type { SizePayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
 import type { Status as RemoteStatusModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/remote/models'
 import type { BuildInfo } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/buildinfo/models'
+import type { Info as PasteCacheInfoModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/paste/models'
+import type { ProbeResult as RemoteProbeResultModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service/models'
 
 // 绑定是生成物，形状会跟着生成参数变：
 // Taskfile 里统一带 -i（生成 interface，不是 class），返回值一律可空。
@@ -21,6 +23,23 @@ export type { DataStore, Settings, RecordStatus, OutputPayload, ExitPayload, Bui
 // 不是运行时算的，所以「现在几点」对它没意义 —— 它记的是这个 exe 是几点编出来的。
 export function getBuildInfo(): Promise<BuildInfo> {
   return AppService.GetBuildInfo()
+}
+
+// —— 手机发过来的图片缓存 ——
+//
+// 手机在远程终端里发一张图，hub 会把它落到 ~/.go-terminal-hub/paste 下、
+// 再把路径打进终端（claude code 是按路径认图片的）。文件不会自己消失，
+// 所以在「关于」里给一个清空入口。
+
+export type PasteCacheInfo = PasteCacheInfoModel
+
+export function getPasteCacheInfo(): Promise<PasteCacheInfo> {
+  return AppService.GetPasteCacheInfo()
+}
+
+/** 返回的是清掉的那部分，调用方拿它拼「清了多少」的提示。 */
+export function clearPasteCache(): Promise<PasteCacheInfo> {
+  return AppService.ClearPasteCache()
 }
 
 // 一行会话 = 配置（store，跨重启活着）+ 运行状态（hub，只在内存）。
@@ -215,6 +234,20 @@ export function getRemoteStatus(): Promise<RemoteStatus> {
 // 强度不能靠人自己想。
 export function generateRemoteToken(): Promise<string> {
   return RemoteService.GenerateToken()
+}
+
+// 「测试连接」的结果。Message 只有失败时有内容（后端报的错原文）；
+// 成功时由前端出本地化文案，所以别拿它当用户可见的正文。
+export type RemoteProbeResult = RemoteProbeResultModel
+
+/**
+ * 拨一次 relay，看地址和令牌对不对。不落盘、不启用。
+ *
+ * 已经连着同一个地址时后端不会真拨——relay 上 agent 只有一个位置，
+ * 试拨会把正在用的那条顶掉。那种情况直接拿现成的连接状态当结果。
+ */
+export function testRemoteConnection(url: string, token: string): Promise<RemoteProbeResult> {
+  return RemoteService.TestConnection(url, token)
 }
 
 export function onRemoteStatus(cb: (status: RemoteStatus) => void): () => void {

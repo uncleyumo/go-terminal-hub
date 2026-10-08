@@ -138,6 +138,13 @@ func (a *Agent) Status() Status {
 	return a.status
 }
 
+// Config 返回当前正在用的配置。
+func (a *Agent) Config() Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg
+}
+
 func (a *Agent) setStatus(s Status) {
 	a.mu.Lock()
 	a.status = s

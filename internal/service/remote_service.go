@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
@@ -72,6 +73,53 @@ func (x *RemoteService) GetRemoteStatus() remote.Status {
 		return remote.Status{State: remote.StateDisabled}
 	}
 	return agent.Status()
+}
+
+// ProbeResult 是「测试连接」的结果。
+//
+// Message 只在失败时有内容（后端报的错原文），成功时由前端出本地化文案。
+type ProbeResult struct {
+	OK      bool   `json:"ok"`
+	Already bool   `json:"already"`
+	Message string `json:"message"`
+}
+
+// TestConnection 拨一次 relay，看地址和令牌对不对。不落盘、不启用，就是一次试拨。
+func (x *RemoteService) TestConnection(url, token string) ProbeResult {
+	url = strings.TrimSpace(url)
+	token = strings.TrimSpace(token)
+
+	x.mu.Lock()
+	agent := x.agent
+	x.mu.Unlock()
+
+	// ⚠️ 已经连着同一个地址时不能再拨：relay 上 agent 只有一个位置，
+	// 新连接会把正在用的那条顶掉（关闭码 4002），本机要退避 60 秒才回来。
+	// 这种情况直接拿现成的状态当结果——连接活着，就说明地址和令牌都对。
+	if agent != nil {
+		cfg, st := agent.Config(), agent.Status()
+		if cfg.Enabled && st.State == remote.StateConnected && sameTarget(cfg.URL, url) {
+			return ProbeResult{OK: true, Already: true}
+		}
+	}
+
+	if err := remote.Probe(context.Background(), url, token); err != nil {
+		return ProbeResult{Message: err.Error()}
+	}
+	return ProbeResult{OK: true}
+}
+
+// sameTarget 比较两个地址是不是同一个。
+//
+// 逐字比会漏：用户可能把 https:// 和 wss:// 当两个地址看，其实拨的是同一台机器。
+// 归一化之后还比不了（比如地址写错了）就退化成逐字比。
+func sameTarget(a, b string) bool {
+	na, errA := remote.NormalizeURL(a)
+	nb, errB := remote.NormalizeURL(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return na == nb
 }
 
 // GenerateToken 生成一个足够强的预共享令牌。

@@ -109,6 +109,11 @@ function handleControl(m: ControlMessage) {
     case 'size':
       if (m.cols && m.rows) size.value = { cols: m.cols, rows: m.rows }
       break
+    case 'uploaded':
+      // 图已经在电脑上了，现在把它的路径打进输入框——claude code 认这个。
+      // 插入这一步留给终端组件：要不要裹 bracketed paste 得看它那侧的模式状态。
+      if (m.path) termRef.value?.insertPath(m.path)
+      break
     case 'started':
       client.value?.list()
       break

@@ -17,6 +17,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as remote$0 from "../remote/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 /**
  * GenerateToken 生成一个足够强的预共享令牌。
  * 
@@ -39,4 +43,11 @@ export function GetRemoteStatus(): $CancellablePromise<remote$0.Status> {
  */
 export function Reload(): $CancellablePromise<void> {
     return $Call.ByID(3968267873);
+}
+
+/**
+ * TestConnection 拨一次 relay，看地址和令牌对不对。不落盘、不启用，就是一次试拨。
+ */
+export function TestConnection(url: string, token: string): $CancellablePromise<$models.ProbeResult> {
+    return $Call.ByID(3348211248, url, token);
 }

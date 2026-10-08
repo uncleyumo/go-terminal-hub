@@ -25,6 +25,12 @@ export default {
     infoWrite: 'Email the author',
     infoFailed: "Couldn't read the build info (the backend binding is missing)",
     repository: 'Open the GitHub repository',
+    // Images sent from the phone land here and never expire on their own
+    infoCache: 'Image cache',
+    infoCacheEmpty: 'Empty',
+    infoCacheClear: 'Clear',
+    infoCacheCleared: 'Cleared {files} files, freed {size}',
+    infoCacheClearFailed: 'Failed to clear',
   },
   theme: {
     label: 'Theme',
@@ -104,6 +110,10 @@ export default {
     autoTakeover: 'Take over as soon as the phone connects',
     autoTakeoverHint:
       'Off by default: the phone starts as a read-only viewer and taps Take over to get the keyboard. On saves that tap.',
+    test: 'Test connection',
+    testing: 'Testing…',
+    testOk: 'Connected',
+    testAlready: 'Already connected to this address',
     statusLabel: 'Connection',
     controlledByWeb: 'Phone is controlling this session',
     takeBack: 'Take back control',

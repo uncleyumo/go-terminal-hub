@@ -56,6 +56,9 @@ type Hub struct {
 	// 而 Subscribe 是远程桥的热路径，不该被建进程拖住。
 	bcMu         sync.Mutex
 	broadcasters map[string]*broadcaster
+
+	// tap 是生命周期观察者，属于这个 Hub 实例。见 tap.go 里 tapHolder 的注释。
+	tap tapHolder
 }
 
 type RecordStatus struct {
@@ -188,7 +191,7 @@ func (h *Hub) StartSession(id string) error {
 	bc := newBroadcaster(id, ringCapacity, sink.NewBatchingSink(&sink.EmitSink{
 		App: application.Get(),
 		Id:  id,
-	}))
+	}), &h.tap)
 
 	h.bcMu.Lock()
 	if old, ok := h.broadcasters[id]; ok {
@@ -340,7 +343,7 @@ func (h *Hub) ResizeFrom(id, who string, cols, rows uint16) error {
 		return err
 	}
 	emitEvent("session:size", sink.SizePayload{ID: id, Cols: cols, Rows: rows})
-	notifyTap(func(t Tap) { t.OnLease(id, who, cols, rows) })
+	notifyTap(&h.tap, func(t Tap) { t.OnLease(id, who, cols, rows) })
 	return nil
 }
 
@@ -377,7 +380,7 @@ func (h *Hub) SetController(id, who string, cols, rows uint16) error {
 
 	emitEvent("session:lease", sink.LeasePayload{ID: id, Controller: who, Cols: cols, Rows: rows})
 	emitEvent("session:size", sink.SizePayload{ID: id, Cols: cols, Rows: rows})
-	notifyTap(func(t Tap) { t.OnLease(id, who, cols, rows) })
+	notifyTap(&h.tap, func(t Tap) { t.OnLease(id, who, cols, rows) })
 	return nil
 }
 

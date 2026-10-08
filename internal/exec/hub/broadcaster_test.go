@@ -57,7 +57,7 @@ func (s *fakeSub) count() int {
 // 桌面那条链的行为不能被改变。
 func TestBroadcasterForwardsToEmit(t *testing.T) {
 	emit := &fakeSink{}
-	b := newBroadcaster("s1", 64, emit)
+	b := newBroadcaster("s1", 64, emit, &tapHolder{})
 
 	b.OnOutput([]byte("hello"))
 	b.OnOutput([]byte(" world"))
@@ -70,7 +70,7 @@ func TestBroadcasterForwardsToEmit(t *testing.T) {
 
 // 订阅者从游标 0 读，拿到的就是「全部历史 + 之后的实时输出」，中间不漏不重。
 func TestBroadcasterSubscribeGivesContinuousStream(t *testing.T) {
-	b := newBroadcaster("s1", 64, &fakeSink{})
+	b := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	b.OnOutput([]byte("before "))
 
 	sub := &fakeSub{}
@@ -99,7 +99,7 @@ func TestBroadcasterSubscribeGivesContinuousStream(t *testing.T) {
 }
 
 func TestBroadcasterUnsubscribe(t *testing.T) {
-	b := newBroadcaster("s1", 64, &fakeSink{})
+	b := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	sub := &fakeSub{}
 	b.subscribe(sub)
 	b.unsubscribe(sub)
@@ -114,7 +114,7 @@ func TestBroadcasterUnsubscribe(t *testing.T) {
 // 订阅者不走这条路，它靠 Tap.OnExited。
 func TestBroadcasterExitNotifiesEmitOnce(t *testing.T) {
 	emit := &fakeSink{}
-	b := newBroadcaster("s1", 64, emit)
+	b := newBroadcaster("s1", 64, emit, &tapHolder{})
 
 	b.OnProcessExited(executor.ExitResult{Code: 0})
 
@@ -130,7 +130,8 @@ func TestTapReceivesLifecycle(t *testing.T) {
 	h.SetTap(rec)
 	defer h.SetTap(nil)
 
-	b := newBroadcaster("s1", 64, &fakeSink{})
+	// 这条要拿到**这个 hub** 的观察者槽，否则通知投不到 rec 上
+	b := newBroadcaster("s1", 64, &fakeSink{}, &h.tap)
 	b.OnStarted("s1")
 	b.OnProcessExited(executor.ExitResult{Code: 3})
 
@@ -182,11 +183,11 @@ func (t *fakeTap) OnLease(id, controller string, cols, rows uint16) {
 
 // 重启会话会换一条新的 emit 链，但订阅者要跟过来，否则远程桥在重启后静默失联。
 func TestBroadcasterTakeSubs(t *testing.T) {
-	old := newBroadcaster("s1", 64, &fakeSink{})
+	old := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	sub := &fakeSub{}
 	old.subscribe(sub)
 
-	fresh := newBroadcaster("s1", 64, &fakeSink{})
+	fresh := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	fresh.takeSubs(old)
 
 	fresh.OnOutput([]byte("new run"))
@@ -203,10 +204,10 @@ func TestBroadcasterTakeSubs(t *testing.T) {
 
 // 新 broadcaster 是空环：重启后不该回放上一轮的输出。
 func TestBroadcasterFreshRingAfterRestart(t *testing.T) {
-	old := newBroadcaster("s1", 64, &fakeSink{})
+	old := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	old.OnOutput([]byte("previous run output"))
 
-	fresh := newBroadcaster("s1", 64, &fakeSink{})
+	fresh := newBroadcaster("s1", 64, &fakeSink{}, &tapHolder{})
 	fresh.takeSubs(old)
 
 	sub := &fakeSub{}

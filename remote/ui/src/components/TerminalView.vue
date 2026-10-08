@@ -9,6 +9,7 @@ import { onBeforeUnmount, onMounted, ref, watch, useTemplateRef } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { HubClient, RESET_MARKER } from '../api'
+import { shrinkImage } from '../image'
 import { applyCtrl, type KeyDef } from '../keys'
 import KeyBar from './KeyBar.vue'
 
@@ -28,11 +29,16 @@ const emit = defineEmits<{
 }>()
 
 const hostRef = useTemplateRef<HTMLDivElement>('host')
+const fileRef = useTemplateRef<HTMLInputElement>('file')
 const fontSize = ref(13)
 const ctrl = ref(false)
 const shift = ref(false)
 /** 视图停在回滚历史里（不在最底部）。用来提示「你现在看的不是最新的」。 */
 const scrolledUp = ref(false)
+/** 发图过程里的提示（正在压、存到哪了、失败了）。 */
+const uploadMsg = ref('')
+const uploading = ref(false)
+let uploadTimer: number | null = null
 
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -149,6 +155,57 @@ function onTermData(data: string) {
   write(data)
 }
 
+// --- 发图 -------------------------------------------------------------------
+
+function flashUpload(text: string, keepMs = 3000) {
+  uploadMsg.value = text
+  if (uploadTimer !== null) window.clearTimeout(uploadTimer)
+  uploadTimer = window.setTimeout(() => {
+    uploadTimer = null
+    uploadMsg.value = ''
+  }, keepMs)
+}
+
+/**
+ * 把一张图塞进终端。
+ *
+ * 走的是「存成文件、把路径打进输入框」这条路：claude code 的输入里出现一个
+ * 以 .png/.jpg/.jpeg/.gif/.webp 结尾的路径，它就当图片附件收下——跟把图片文件
+ * 拖进终端是同一套（终端拖拽插进去的本来就是路径字符串）。
+ *
+ * 不直接把图片字节塞进 PTY：PTY 那头只是个终端程序，它不认识图片。
+ */
+function insertPath(path: string) {
+  if (!term || !path) return
+  // 路径要**整块**出现才被判成图片附件，所以裹成 bracketed paste。
+  // 但程序没开这个模式的时候，裹了就会在屏幕上变成一串乱码转义序列，
+  // 所以先问 xterm 要模式状态（它是从 PTY 输出里读到的，跟真实程序一致）。
+  const text = term.modes.bracketedPasteMode ? `\x1b[200~${path}\x1b[201~ ` : `${path} `
+  props.client.sendInput(text)
+  flashUpload('已插入图片路径')
+}
+
+/** 点了「发图」：选图 → 压缩 → 发上去。存好之后由 App 那侧回调 insertPath。 */
+async function onPickImage(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 选完立刻清空，否则再选同一张图不会再触发 change
+  input.value = ''
+  if (!file) return
+
+  uploading.value = true
+  flashUpload('正在压缩…', 60000)
+  try {
+    const { data, mediaType } = await shrinkImage(file)
+    props.client.upload(data, mediaType)
+    flashUpload('正在发送…', 60000)
+  } catch (error) {
+    flashUpload(error instanceof Error ? error.message : '发图失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
 // --- 生命周期 ---------------------------------------------------------------
 
 onMounted(() => {
@@ -205,6 +262,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('orientationchange', onViewportResize)
   resizeObserver?.disconnect()
   if (fitTimer !== null) window.clearTimeout(fitTimer)
+  if (uploadTimer !== null) window.clearTimeout(uploadTimer)
   term?.dispose()
   term = null
   fitAddon = null
@@ -229,7 +287,7 @@ function writeOutput(bytes: Uint8Array) {
   term.write(bytes)
 }
 
-defineExpose({ writeOutput })
+defineExpose({ writeOutput, insertPath })
 
 // 控制方换人：自己拿到控制权就重新 fit 并上报，交出去就切成对方的网格
 watch(
@@ -287,8 +345,23 @@ watch(fontSize, () => {
       <span class="dim size">{{ fontSize }}</span>
       <button class="btn icon" @click="fontSize = Math.min(24, fontSize + 1)">A+</button>
       <span class="spacer"></span>
+      <!-- 发图：选手机相册/拍照，压好之后存到电脑上，把路径打进输入框。
+           只有控制方能发——往本机写文件不该是旁观方的能力，后端也拦了一道。 -->
+      <button v-if="isController()" class="btn" :disabled="uploading" @click="fileRef?.click()">
+        发图
+      </button>
       <button v-if="isController()" class="btn" @click="emit('release')">交还控制</button>
     </div>
+
+    <input
+      ref="file"
+      type="file"
+      accept="image/png,image/jpeg,image/gif,image/webp"
+      style="display: none"
+      @change="onPickImage"
+    />
+
+    <div v-if="uploadMsg" class="notice">{{ uploadMsg }}</div>
 
     <KeyBar
       :ctrl="ctrl"
@@ -301,10 +374,31 @@ watch(fontSize, () => {
 
 <style scoped>
 .term-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 发图的进度/结果提示。浮在终端上方，不占布局高度——
+   手机屏幕上每一条常驻的横条都是从终端里抢走的行数。 */
+.notice {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: 80%;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elev);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fontbar {

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/hub"
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/store"
+	"github.com/uncleyumo/go-terminal-hub/internal/paste"
 	"github.com/uncleyumo/go-terminal-hub/remote/protocol"
 )
 
@@ -245,6 +247,8 @@ func (b *bridge) handleControl(data []byte) {
 		b.forceResync()
 	case protocol.TypeRepaint:
 		b.repaint()
+	case protocol.TypeUpload:
+		b.upload(m)
 	case protocol.TypeBrowserOnline:
 		b.browserOnline = true
 		b.sendList()
@@ -341,6 +345,36 @@ func (b *bridge) repaint() {
 	if err := b.hub.NudgeRepaint(id, hub.SourceWeb); err != nil && !errors.Is(err, hub.ErrNotController) {
 		slog.Debug("nudge repaint failed", "id", id, "err", err)
 	}
+}
+
+// upload 把浏览器发来的一张图存到 hub 这台机器上，再把路径回过去。
+//
+// 只存文件、不代插终端：路径要不要裹成 bracketed paste 取决于终端里的程序
+// 有没有开那个模式，而那个状态只有浏览器那侧的 xterm 知道，所以插入由浏览器自己做。
+func (b *bridge) upload(m protocol.Message) {
+	id := b.bound()
+	if id == "" {
+		b.sendError("还没有绑定会话")
+		return
+	}
+	// 往本机磁盘写文件是控制方才有的能力。旁观方点不出这个按钮，
+	// 但闸门放在这里才算数——按钮藏起来不算权限。
+	if who, _ := b.hub.Controller(id); who != hub.SourceWeb {
+		b.sendError("先接管才能发图")
+		return
+	}
+
+	data, err := base64.StdEncoding.DecodeString(m.Data)
+	if err != nil {
+		b.sendError("图片数据不完整")
+		return
+	}
+	path, err := paste.Save(data)
+	if err != nil {
+		b.sendError(err.Error())
+		return
+	}
+	b.sendControl(protocol.Message{Type: protocol.TypeUploaded, Path: path})
 }
 
 func (b *bridge) forceResync() {
