@@ -86,6 +86,36 @@ export default {
   term: {
     exited: '— session ended · code {code} —',
   },
+  remote: {
+    title: 'Phone remote access',
+    intro:
+      'When enabled, this machine dials out to a relay server in the cloud. Open that address in a phone browser to see these sessions and take over the keyboard. No public IP and no port forwarding needed here.',
+    warning:
+      '⚠️ Anyone who can open that URL can type arbitrary keys into a terminal on this machine — it is a shell on the internet. Use the Generate button for the token, and always go over https.',
+    enable: 'Enable remote access',
+    url: 'Relay URL',
+    urlHint: 'Like wss://your-domain/ws/agent. Only wss keeps the token and keystrokes away from a man in the middle.',
+    token: 'Access token',
+    tokenPlaceholder: 'Use Generate',
+    tokenHint: 'The computer and the phone share this token. You type it once in the phone browser, then you stay signed in.',
+    generate: 'Generate',
+    copy: 'Copy',
+    tokenCopied: 'Token copied',
+    autoTakeover: 'Take over as soon as the phone connects',
+    autoTakeoverHint:
+      'Off by default: the phone starts as a read-only viewer and taps Take over to get the keyboard. On saves that tap.',
+    statusLabel: 'Connection',
+    controlledByWeb: 'Phone is controlling this session',
+    takeBack: 'Take back control',
+    takeBackFailed: 'Failed to take back control',
+    status: {
+      disabled: 'Disabled',
+      connecting: 'Connecting…',
+      connected: 'Connected (no phone online)',
+      connectedWithBrowser: 'Connected, phone online',
+      error: 'Connection failed',
+    },
+  },
   form: {
     createTitle: 'New session',
     editTitle: 'Edit session',
@@ -143,6 +173,8 @@ export default {
     removeConfirm: 'Delete this session?',
     removeRunning: 'Stop it before deleting',
     startFailed: 'Failed to start session',
+    stopConfirm: 'Stop "{name}"?',
+    stopConfirmBody: 'Whatever is running inside is killed immediately, unsaved work included.',
     stopFailed: 'Failed to stop session',
     copied: 'Copied to clipboard',
     nothingToCopy: 'There is nothing to copy',

@@ -35,9 +35,9 @@ func (c *ConPTYExecutor) Start(spec executor.LaunchSpec) error {
 		return err
 	}
 	if spec.Cols < 1 || spec.Rows < 1 {
-		slog.Info("set cols and rows to default: 80x25")
-		spec.Cols, spec.Rows = 80, 25
+		slog.Info("set cols and rows to default", "cols", executor.DefaultCols, "rows", executor.DefaultRows)
 	}
+	spec.Cols, spec.Rows = executor.GridSize(spec.Cols, spec.Rows)
 	err = p.Resize(int(spec.Cols), int(spec.Rows))
 	if err != nil {
 		slog.Error("Failed to resize pty", "err", err)

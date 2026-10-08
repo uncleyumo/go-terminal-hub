@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      viewport-fit=cover 让内容铺到刘海/圆角下面，再靠 env(safe-area-inset-*) 自己留边。
+      interactive-widget=resizes-content 让软键盘弹出时改的是布局高度而不是整页缩放——
+      没有它，Android 上键盘一弹，终端会被顶出屏幕。
+      禁止缩放：终端里双击是选中，不是放大。
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>terminal hub</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

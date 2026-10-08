@@ -87,6 +87,36 @@ export default {
   term: {
     exited: '— 会话结束 · 退出码 {code} —',
   },
+  remote: {
+    title: '手机远程接管',
+    intro:
+      '开启后本机主动拨号到云端的 relay 服务器，手机浏览器打开那个地址就能看到这里的会话、接管输入。本机不需要公网 IP，也不用做端口映射。',
+    warning:
+      '⚠️ 开了这个，能打开那个网址的人就能往这台机器的终端里敲任意按键 —— 等于把 shell 挂在网上。令牌务必用「生成」按钮产出的那一串，并且只走 https。',
+    enable: '启用远程接管',
+    url: 'relay 地址',
+    urlHint: '形如 wss://你的域名/ws/agent。走 wss 才能保证令牌和按键不被中间人看到。',
+    token: '访问令牌',
+    tokenPlaceholder: '点右边「生成」',
+    tokenHint: '电脑和手机共用这一个令牌。手机浏览器第一次打开时输一次，之后免登录。',
+    generate: '生成',
+    copy: '复制',
+    tokenCopied: '令牌已复制',
+    autoTakeover: '手机连上后自动接管',
+    autoTakeoverHint:
+      '默认关闭：手机连上先是只读旁观，点「接管」才拿到输入权。开启后连上即接管，少点一下。',
+    statusLabel: '连接状态',
+    controlledByWeb: '手机正在控制这个会话',
+    takeBack: '收回控制',
+    takeBackFailed: '收回控制失败',
+    status: {
+      disabled: '未启用',
+      connecting: '连接中…',
+      connected: '已连接（手机未在线）',
+      connectedWithBrowser: '已连接，手机在线',
+      error: '连接失败',
+    },
+  },
   form: {
     createTitle: '新建会话',
     editTitle: '编辑会话',
@@ -144,6 +174,8 @@ export default {
     removeConfirm: '删除这个会话？',
     removeRunning: '先停止再删除',
     startFailed: '启动会话失败',
+    stopConfirm: '停止「{name}」？',
+    stopConfirmBody: '里面正在跑的程序会被直接结束，没保存的东西就没了。',
     stopFailed: '停止会话失败',
     copied: '已复制到剪贴板',
     nothingToCopy: '没有可复制的内容',

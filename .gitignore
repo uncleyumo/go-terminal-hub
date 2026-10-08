@@ -1,9 +1,14 @@
 .task
 bin
-dist
+# 锚定到根目录。原来写的是不带斜杠的 dist，那会匹配任意层级的同名目录，
+# 把 remote/ui/dist 也一起排掉——而被排除的目录 git 不会再进去看，
+# remote/ui/.gitignore 里那条 !dist/.gitkeep 就救不回来。
+# 结果：干净克隆上 go build ./... 会因为 //go:embed all:ui/dist 找不到文件而失败。
+/dist
 *.syso
 frontend/dist
 frontend/node_modules
+remote/ui/node_modules
 build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Mobile generated (per-machine; overlays hold absolute paths)

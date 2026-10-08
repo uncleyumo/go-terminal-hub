@@ -1,0 +1,259 @@
+@import '@xterm/xterm/css/xterm.css';
+
+:root {
+  --bg: #12141a;
+  --bg-elev: #1a1d26;
+  --border: #2a2f3d;
+  --text: #e4e6eb;
+  --text-dim: #8b93a7;
+  --accent: #4f8cff;
+  --danger: #ff5c5c;
+  --ok: #3ecf8e;
+  --warn: #f5a524;
+
+  /* 键盘弹出时用 dvh 才不会算错；再叠一层 safe-area 给刘海和手势条让位。 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 15px;
+  /* 终端里双击是选中文字，不是放大页面 */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  /* iOS 上按钮默认有一层高亮，跟终端的观感不搭 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+input {
+  font: inherit;
+}
+
+/* 通用按钮样式：够大，手机上点得中 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: background 0.12s ease;
+}
+
+.btn:active {
+  background: #232838;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn.danger {
+  color: var(--danger);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+/* 顶部工具条 */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(var(--safe-top) + 8px) 12px 8px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.topbar .title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态点 */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-dim);
+}
+
+.dot.on {
+  background: var(--ok);
+}
+
+.dot.off {
+  background: var(--danger);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+/* 提示条 */
+.banner {
+  padding: 8px 12px;
+  font-size: 13px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.banner.info {
+  background: #1c2740;
+  color: #a8c4ff;
+}
+
+.banner.warn {
+  background: #3a2d12;
+  color: #ffd28a;
+}
+
+.banner.error {
+  background: #3a1a1a;
+  color: #ffb0b0;
+}
+
+/* 居中的表单页（登录） */
+.centered {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.centered input {
+  width: 100%;
+  max-width: 360px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  /* 16px 以上 iOS 才不会自动放大 */
+  font-size: 16px;
+}
+
+.centered .btn {
+  width: 100%;
+  max-width: 360px;
+  min-height: 48px;
+}
+
+/* 会话列表 */
+.list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--safe-bottom);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  min-height: 60px;
+}
+
+.row:active {
+  background: var(--bg-elev);
+}
+
+.row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row .kind {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 终端区 */
+.term-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+/* 让手指能拖动 xterm 的回滚历史。
+   可滚动的那一层是 xterm 自己塞进来的 .xterm-viewport，不是我们这层 .term-host，
+   所以得指名道姓地放开手势；pan-y 之外的手势留给 xterm 自己做选择。
+   拖不动的时候还有 ▲▼ 两个按钮兜底。 */
+.term-host .xterm-viewport {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* 旁观时：终端按 PTY 的真实网格渲染，居中显示，并加一圈虚线边框，
+   一眼能看出「这不是我控制的那个」。 */
+.term-host.viewer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.term-host.viewer .xterm {
+  outline: 1px dashed var(--warn);
+  outline-offset: 4px;
+}

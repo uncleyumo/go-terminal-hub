@@ -8,6 +8,10 @@ import (
 )
 
 type StoreService struct {
+	// OnSettingsSaved 在设置写盘成功后调用，用来让远程桥热生效
+	// （启用/停用、换地址、换令牌都不用重启应用）。
+	// 由 main.go 注入，避免两个 service 互相 import 出环。
+	OnSettingsSaved func()
 }
 
 func (s *StoreService) ListSessions() ([]store.DataStore, error) {
@@ -88,6 +92,9 @@ func (s *StoreService) SaveSettings(settings store.Settings) error {
 	}
 	if err := useStore.UpdateSettings(settings); err != nil {
 		return errors.Errorf("update settings error: %v", err)
+	}
+	if s.OnSettingsSaved != nil {
+		s.OnSettingsSaved()
 	}
 	return nil
 }

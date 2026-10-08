@@ -12,6 +12,19 @@ export interface ExitPayload {
 }
 
 /**
+ * LeasePayload 是 "session:lease" 事件的数据类型：某个会话的控制权换人了。
+ * 
+ * 桌面端靠它决定自己该是「控制方」还是「旁观者」。旁观时它必须停止上报尺寸，
+ * 否则窗口一缩放就会把对方的 PTY 尺寸顶掉。
+ */
+export interface LeasePayload {
+    "id": string;
+    "controller": string;
+    "cols": number;
+    "rows": number;
+}
+
+/**
  * OutputPayload 是 "session:output" 事件的数据类型。
  * 导出是因为 main.go 的 init() 里要把它注册给 RegisterEvent——
  * wails 的事件数据是精确类型匹配的，注册的类型必须和 Emit 传的类型一模一样，
@@ -20,4 +33,14 @@ export interface ExitPayload {
 export interface OutputPayload {
     "id": string;
     "text": string;
+}
+
+/**
+ * SizePayload 是 "session:size" 事件的数据类型：PTY 的真实网格变了。
+ * 旁观方按这个尺寸渲染——终端尺寸属于 PTY，不属于窗口。
+ */
+export interface SizePayload {
+    "id": string;
+    "cols": number;
+    "rows": number;
 }

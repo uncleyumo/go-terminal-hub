@@ -1,0 +1,32 @@
+# Caddy 反代示例。Caddy 会自动申请并续期 Let's Encrypt 证书，
+# 所以 relay 自己只监听明文端口，TLS 全交给这里终结。
+#
+# 用法：
+#   1. 把 hub.example.com 换成你的域名，A 记录指向这台服务器
+#   2. 把下面这段并进 /etc/caddy/Caddyfile
+#   3. sudo systemctl reload caddy
+#
+# 注意 relay 要用 -addr 127.0.0.1:8080 启动：只监听本机，
+# 公网只经过 Caddy 这一道。
+
+hub.example.com {
+	# WebSocket 的升级握手必须被转发，否则 /ws/* 会在反代这里断掉。
+	# Caddy 的 reverse_proxy 默认就会转发 Upgrade/Connection，不用额外写。
+	reverse_proxy 127.0.0.1:8080
+
+	# 令牌是这台机器的 shell 钥匙。别让它出现在任何日志里。
+	log {
+		output file /var/log/caddy/hub.log
+		format json
+		# 请求行里有路径，但没有 Authorization 头，所以令牌不会被记下来
+	}
+}
+
+# 如果暂时没有域名，可以用自签证书先跑通：
+#
+# :8443 {
+#     tls internal
+#     reverse_proxy 127.0.0.1:8080
+# }
+#
+# 但手机浏览器会警告证书不受信任。正式用还是配个域名。

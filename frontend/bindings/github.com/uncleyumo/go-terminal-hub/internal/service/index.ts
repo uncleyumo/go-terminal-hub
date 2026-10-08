@@ -3,9 +3,11 @@
 
 import * as AppService from "./appservice.js";
 import * as HubService from "./hubservice.js";
+import * as RemoteService from "./remoteservice.js";
 import * as StoreService from "./storeservice.js";
 export {
     AppService,
     HubService,
+    RemoteService,
     StoreService
 };

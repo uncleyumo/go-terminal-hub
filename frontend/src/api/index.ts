@@ -1,11 +1,14 @@
 // 唯一碰 bindings 的地方。组件只 import 这里的函数，不直接 import bindings。
 import { Events } from '@wailsio/runtime'
-import { AppService, HubService, StoreService } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service'
+import { AppService, HubService, RemoteService, StoreService } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service'
 import type { DataStore } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { Settings } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { RecordStatus } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/hub/models'
 import type { ExitPayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
 import type { OutputPayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
+import type { LeasePayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
+import type { SizePayload } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/sink/models'
+import type { Status as RemoteStatusModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/remote/models'
 import type { BuildInfo } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/buildinfo/models'
 
 // 绑定是生成物，形状会跟着生成参数变：
@@ -138,7 +141,7 @@ export function resolveWorkDir(id: string): Promise<string> {
 }
 
 // 「这条会话实际会跑什么」—— 用户拿它核对命令行。
-// ⚠️ 后端是从**运行中的**会话里读的（`hub.GetSession` → `GetLaunchSpec`），
+// ⚠️ 后端是从**运行中的**会话里读的（`hub.LaunchSpec`），
 // 所以没启动过的会话会 reject，这是设计如此，不是出错。
 export function resolveSpecCommandLine(id: string): Promise<string> {
   return AppService.ResolveSpecCommandLine(id)
@@ -167,4 +170,53 @@ export function onSessionExited(cb: (payload: ExitPayload) => void): () => void 
 
 export function onSessionStarted(cb: (id: string) => void): () => void {
   return Events.On('session:started', (event) => cb(event.data))
+}
+
+// —— 控制权租约（手机远程接管）——
+//
+// 每个会话在任意时刻只有一个「控制方」：desktop 或 web。只有它能发输入、改尺寸，
+// PTY 的尺寸跟着控制方走。另一方是只读旁观者，按 PTY 的真实网格渲染。
+//
+// 手机接管时桌面会看到：终端缩成一个 48×20 的小格子居中显示，上面挂一条提示条。
+// 这不是 bug —— 尺寸属于 PTY，不属于窗口。桌面要是还按自己窗口的尺寸渲染，
+// 就会和 PTY 实际在重绘的网格对不上，画面全错。
+
+export type SessionLease = LeasePayload
+export type SessionSize = SizePayload
+export type RemoteStatus = RemoteStatusModel
+
+export function onSessionLease(cb: (payload: LeasePayload) => void): () => void {
+  return Events.On('session:lease', (event) => cb(event.data))
+}
+
+export function onSessionSize(cb: (payload: SizePayload) => void): () => void {
+  return Events.On('session:size', (event) => cb(event.data))
+}
+
+// 桌面端「收回控制」。
+//
+// cols/rows 必须显式传：旁观时容器是按手机的网格撑开的，得先恢复自己的布局、
+// 量出真实尺寸再交过来，否则 PTY 会停在手机那个尺寸上。
+export function takeControl(id: string, cols: number, rows: number): Promise<void> {
+  return HubService.TakeControl(id, cols, rows)
+}
+
+export function controllerOf(id: string): Promise<string> {
+  return HubService.Controller(id)
+}
+
+// —— 远程接管设置 ——
+
+export function getRemoteStatus(): Promise<RemoteStatus> {
+  return RemoteService.GetRemoteStatus()
+}
+
+// 32 字节随机再 base64。这个令牌的持有者能把任意按键送进本机终端，
+// 强度不能靠人自己想。
+export function generateRemoteToken(): Promise<string> {
+  return RemoteService.GenerateToken()
+}
+
+export function onRemoteStatus(cb: (status: RemoteStatus) => void): () => void {
+  return Events.On('remote:status', (event) => cb(event.data))
 }

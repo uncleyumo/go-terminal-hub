@@ -3,5 +3,7 @@
 
 export type {
     ExitPayload,
-    OutputPayload
+    LeasePayload,
+    OutputPayload,
+    SizePayload
 } from "./models.js";

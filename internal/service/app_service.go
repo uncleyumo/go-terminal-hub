@@ -75,11 +75,11 @@ func (a *AppService) ResolveWorkDir(id string) (string, error) {
 
 // ResolveSpecCommandLine 用于回显实际的命令行
 func (a *AppService) ResolveSpecCommandLine(id string) (string, error) {
-	session, err := hub.GetHub().GetSession(id)
+	spec, err := hub.GetHub().LaunchSpec(id)
 	if err != nil {
 		return "", err
 	}
-	return session.GetLaunchSpec().Command, nil
+	return spec.Command, nil
 }
 
 // OpenWorkDir 用于打开工作目录

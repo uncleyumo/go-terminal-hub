@@ -1,0 +1,49 @@
+# systemd 单元文件。放到 /etc/systemd/system/hub-relay.service
+#
+# 安装：
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin hub-relay
+#   sudo install -m 0755 hub-relay /usr/local/bin/hub-relay
+#   sudo install -m 0640 -o root -g hub-relay relay.env /etc/hub-relay.env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hub-relay
+#   journalctl -u hub-relay -f
+#
+# 令牌放 /etc/hub-relay.env（RELAY_TOKEN=...），别写在这个文件里 ——
+# 单元文件常常被复制粘贴到别处，而令牌等同于这台机器的 shell 钥匙。
+
+[Unit]
+Description=go-terminal-hub relay (web remote access)
+Documentation=https://github.com/uncleyumo/go-terminal-hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hub-relay
+Group=hub-relay
+EnvironmentFile=/etc/hub-relay.env
+
+# 只监听本机：公网流量必须经过 Caddy，由它终结 TLS。
+# 想直接对外暴露就把这行改成 0.0.0.0:8080 —— 但那样令牌是明文传输的，
+# 别这么干。
+ExecStart=/usr/local/bin/hub-relay -addr 127.0.0.1:8080 -trust-proxy -log-level info
+
+Restart=always
+RestartSec=3
+
+# 这个进程能做的不多：读自己的配置、接 WebSocket、转发帧。
+# 别给它多余的权限。
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

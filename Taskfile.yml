@@ -12,6 +12,34 @@ vars:
   # 真要加回别的平台，从 git 历史里取回对应目录，再把 includes 和这几处分发加回来。
   GOOS: '{{.GOOS | default OS}}'
 
+  # ---- 链接器注入的版本号和构建时间 ----------------------------------------
+  # 只有 APP_VERSION / BUILD_TIME 放顶层（sh 命令只有在这里求值得出来），
+  # 拼 -ldflags 字符串的 APP_INFO_LDFLAGS 放在 build:native 自己的 vars 里 ——
+  # 顶层 var 里再引用别的顶层动态 var 会展开成空串（2026-09-29 实测，绕了两轮）。
+  #
+  # 链接器把这两个值写进 binary 里的包级字符串变量（internal/buildinfo）。
+  # 变量全名 = 导入路径 + 变量名，少写包名会报
+  # "-X flag requires argument of the form importpath.name=value"（实测）。
+  # ⚠️ 注入目标的名字跟 buildinfo.go 里的**逐字对得上**——version / buildTime 都是小写开头。
+  # 链接器按符号名找，写错大小写不报错，只是静默不替换。
+  # ⚠️ 值里绝不能有空格 —— 整条 -ldflags 外面只有一层双引号，
+  # 值里的空格会被 sh 拆成两个参数。ISO 格式的日期时间正好没有空格。
+  # ⚠️ 以后开 OBFUSCATED 走 garble 时要重测：garble 会重命名变量，
+  # -X 按名字找符号，可能就找不到了。本项目没用过 OBFUSCATED。
+  #
+  # 版本号唯一真源是 build/config.yml 的 info.version —— 本项目自己的字段，
+  # 顶层的 version: '3' 是 Taskfile 格式版本号，靠「两空格缩进」区分开。
+  #
+  # 路径怎么写（2026-09-29 实测，之前搞错过两轮）：
+  #   sh 命令的工作目录 = 项目根，也就是 ROOT_DIR，不是本文件所在的 build/windows/。
+  #   所以相对路径要从项目根起算，`../config.yml` 找不到东西。
+  APP_VERSION:
+    sh: 'grep -E "^  version:" "{{.ROOT_DIR}}/build/config.yml" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | tr -d ""'
+  # 编译那一刻的本地时间。跟 git 提交时间无关 —— 你改完没 commit 也照样变。
+  BUILD_TIME:
+    sh: 'date +%Y-%m-%dT%H:%M:%S%z'
+
+
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
@@ -57,6 +85,11 @@ tasks:
     summary: Installs tools required for Windows MSIX packaging
     cmds:
       - task: windows:install:msix:tools
+
+  relay:
+    summary: Builds the cloud relay binary (Linux, single file) with the web UI embedded
+    cmds:
+      - task: common:build:relay
 
   build:server:
     summary: Builds the application in server mode (no GUI, HTTP server only)

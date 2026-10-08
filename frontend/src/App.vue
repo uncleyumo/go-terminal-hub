@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SessionList from './components/SessionList.vue'
 import SessionForm from './components/SessionForm.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import TermBackgroundDialog from './components/TermBackgroundDialog.vue'
 import AppInfoDialog from './components/AppInfoDialog.vue'
+import RemoteSettingsDialog, { type RemoteConfig } from './components/RemoteSettingsDialog.vue'
 import UButton from './components/ui/UButton.vue'
 import UConfirmHost from './components/ui/UConfirmHost.vue'
 import UDialog from './components/ui/UDialog.vue'
@@ -23,7 +24,11 @@ import {
   getSettings,
   listSessions,
   onSessionExited,
+  getRemoteStatus,
+  onRemoteStatus,
+  onSessionLease,
   onSessionOutput,
+  onSessionSize,
   onSessionStarted,
   openScriptDir,
   openWorkDir,
@@ -37,6 +42,8 @@ import {
   startSession,
   stopAllSessions,
   stopSession,
+  takeControl,
+  type RemoteStatus,
   type Settings,
   type SessionView,
 } from './api'
@@ -44,8 +51,12 @@ import {
   applyAppBackground,
   clear as clearTerminal,
   disposeAll,
+  enterViewer,
+  exitViewer,
   fit as fitTerminal,
+  fitLocal,
   setSessionBackground,
+  setViewerSize,
   write as writeTerminal,
 } from './terminal/manager'
 import { getAppBackground, getBackground, setAppBackground, setBackground } from './terminal/background'
@@ -57,13 +68,23 @@ const { t } = useI18n()
 
 const sessions = ref<SessionView[]>([])
 const selectedId = ref<string | null>(null)
+
+// —— 控制权租约（手机远程接管）——
+// 每个会话同一时刻只有一个控制方：desktop 或 web。没有记录就是 desktop。
+const controllers = ref<Record<string, string>>({})
+const ptySizes = ref<Record<string, { cols: number; rows: number }>>({})
 const formVisible = ref(false)
 const editing = ref<SessionView | null>(null)
 const configOpen = ref(false)
 const query = ref('')
 
 // 后端会把它存的那份原样回给我们，包括我们不认识的字段，这里保持整份往回写。
-const settings = ref<Settings>({ language: 'en', theme: 'light', startOnBoot: false })
+const settings = ref<Settings>({
+  language: 'en',
+  theme: 'light',
+  startOnBoot: false,
+  remote: { enabled: false, url: '', token: '', autoTakeover: false },
+})
 const locale = ref<AppLocale>('en')
 const themeMode = ref<ThemeMode>('system')
 const startOnBootBusy = ref(false)
@@ -73,6 +94,41 @@ const refreshing = ref(false)
 const colorDialogOpen = ref(false)
 const appColorOpen = ref(false)
 const appInfoOpen = ref(false)
+
+// —— 远程接管 ——
+const remoteOpen = ref(false)
+const remoteStatus = ref<RemoteStatus | null>(null)
+const remoteSaving = ref(false)
+
+const remoteConfig = computed<RemoteConfig>(() => ({
+  enabled: settings.value.remote?.enabled ?? false,
+  url: settings.value.remote?.url ?? '',
+  token: settings.value.remote?.token ?? '',
+  autoTakeover: settings.value.remote?.autoTakeover ?? false,
+}))
+
+// 保存后后端会重读配置并把状态推回来（remote:status 事件），
+// 所以这里不用等、也不用自己去问连接结果。
+async function saveRemoteConfig(next: RemoteConfig) {
+  remoteSaving.value = true
+  try {
+    await saveSettings({ ...settings.value, remote: next })
+    settings.value = { ...settings.value, remote: next }
+    remoteOpen.value = false
+  } catch (error) {
+    notify.error(`${t('remote.title')}: ${String(error)}`)
+  } finally {
+    remoteSaving.value = false
+  }
+}
+
+async function refreshRemoteStatus() {
+  try {
+    remoteStatus.value = await getRemoteStatus()
+  } catch {
+    // 应用刚起来时可能还没跑 ServiceStartup，忽略即可
+  }
+}
 const commandLineOpen = ref(false)
 const commandLine = ref('')
 
@@ -118,6 +174,40 @@ const themeOptions = computed(() => [
 const selected = computed(
   () => sessions.value.find((s) => s.config.id === selectedId.value) ?? null,
 )
+
+// 当前选中的会话是不是正被手机控制。是的话终端区上方要挂提示条。
+const selectedByWeb = computed(
+  () => selectedId.value !== null && controllers.value[selectedId.value] === 'web',
+)
+
+const selectedPtySize = computed(() => {
+  const id = selectedId.value
+  if (id === null) return null
+  return ptySizes.value[id] ?? null
+})
+
+/**
+ * 桌面端点「收回控制」。
+ *
+ * 顺序不能颠倒：先退出旁观、恢复自己的布局量出真实尺寸，再连尺寸一起交上去。
+ * 旁观期间容器是按手机的网格撑开的，后端记着的 desktop 尺寸也还是接管前那个，
+ * 直接把控制权要回来而不带尺寸的话，PTY 会停在手机那个尺寸上。
+ */
+async function takeBackControl() {
+  const id = selectedId.value
+  if (id === null) return
+
+  exitViewer(id)
+  await nextTick()
+  const size = fitLocal(id)
+  if (!size) return
+
+  try {
+    await takeControl(id, size.cols, size.rows)
+  } catch (error) {
+    notify.error(`${t('remote.takeBackFailed')}: ${String(error)}`)
+  }
+}
 
 // 交给表单做重名检查。名称重复的话列表里两条长得一模一样，
 // 点哪条都分不清，启停就更没把握了。
@@ -411,6 +501,17 @@ async function start(session: SessionView) {
 }
 
 async function stop(session: SessionView) {
+  // 停会话是不可撤销的——里面正在跑的东西直接没了，没保存的也一起没。
+  // 工具条上「停止」和「重启」挨着，误点的代价太大，先问一句。
+  const ok = await confirm({
+    title: t('msg.stopConfirm', { name: session.config.name || session.config.id }),
+    message: t('msg.stopConfirmBody'),
+    confirmText: t('action.stop'),
+    cancelText: t('action.cancel'),
+    tone: 'danger',
+  })
+  if (!ok) return
+
   try {
     await stopSession(session.config.id)
   } catch (error) {
@@ -516,6 +617,23 @@ onMounted(async () => {
       // ConPTY 是这一刻才建出来的 —— 之前 attach 时量到的那些尺寸它一句都收不到。
       fitTerminal(id)
     }),
+    // 控制权换人：手机接管 / 桌面收回。
+    onSessionLease((payload) => {
+      controllers.value = { ...controllers.value, [payload.id]: payload.controller }
+      if (payload.controller === 'web') {
+        enterViewer(payload.id, payload.cols, payload.rows)
+      } else {
+        // ⚠️ 自己拿回控制权时**不要**按事件里的尺寸重新 fit —— 那会绕成
+        // fit → resize → 事件 → fit 的回声。exitViewer 自己会重新量。
+        exitViewer(payload.id)
+      }
+    }),
+    // PTY 的真实网格变了。本端是控制方时 setViewerSize 是空操作，
+    // 所以不会出现「自己报的尺寸又回来改自己」。
+    onSessionSize((payload) => {
+      ptySizes.value = { ...ptySizes.value, [payload.id]: { cols: payload.cols, rows: payload.rows } }
+      setViewerSize(payload.id, payload.cols, payload.rows)
+    }),
     onSessionExited((payload) => {
       // 退出的提示画成一条弱化的分隔线（\x1b[2m 是变暗），
       // 不然它跟程序自己打的输出长得一模一样，看着像程序报错。
@@ -529,10 +647,15 @@ onMounted(async () => {
       }
       void load()
     }),
+    // 远程桥的连接状态：连接中/已连接/失败，以及手机在不在线。
+    onRemoteStatus((status) => {
+      remoteStatus.value = status
+    }),
   ]
 
   await loadSettings()
   await load()
+  await refreshRemoteStatus()
   await runAutoStart()
 })
 
@@ -666,6 +789,20 @@ onBeforeUnmount(() => {
       </UTooltip>
 
       <div class="mx-0.5 h-5 w-px bg-line"></div>
+
+      <!-- 远程接管：一个可开可关的可选功能，默认关着。
+           开着的时候状态点会亮，一眼能看出手机在不在线。 -->
+      <UTooltip :content="t('remote.title')">
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="globe"
+          :aria-label="t('remote.title')"
+          :class="remoteStatus?.state === 'connected' && 'text-pos'"
+          @click="remoteOpen = true"
+        />
+      </UTooltip>
 
       <!-- 「关于这个 app」跟仓库链接归成一组：两个都是「关于这个程序本身」，
            不是「操作 app」。组内从左到右是「看信息 → 去看源码」 -->
@@ -878,6 +1015,25 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <!-- 手机正在控制这个会话时的提示条。
+               终端会缩成一个按 PTY 真实网格（比如 48×20）居中显示的小格子——
+               那不是显示错误，尺寸本来就属于 PTY，不属于窗口。 -->
+          <div
+            v-if="selectedByWeb"
+            class="flex flex-none items-center gap-2 border-t border-line bg-warn/10 px-3 py-2 text-xs text-ink"
+          >
+            <span>
+              {{ t('remote.controlledByWeb') }}
+              <template v-if="selectedPtySize">
+                · {{ selectedPtySize.cols }} × {{ selectedPtySize.rows }}
+              </template>
+            </span>
+            <div class="flex-1"></div>
+            <UButton variant="ghost" size="sm" @click="takeBackControl">
+              {{ t('remote.takeBack') }}
+            </UButton>
+          </div>
+
           <!-- key 换行时会重新挂载：manager 里旧实例留着，容器换到新的 host 上 -->
           <TerminalPane :key="selected.config.id" :session-id="selected.config.id" />
         </template>
@@ -929,5 +1085,12 @@ onBeforeUnmount(() => {
       </template>
     </UDialog>
     <AppInfoDialog v-model="appInfoOpen" />
+    <RemoteSettingsDialog
+      v-model="remoteOpen"
+      :config="remoteConfig"
+      :status="remoteStatus"
+      :saving="remoteSaving"
+      @save="saveRemoteConfig"
+    />
   </div>
 </template>

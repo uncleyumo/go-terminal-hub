@@ -1,0 +1,4 @@
+Vite 构建时会把 public/ 里的内容复制进 dist/。
+这个文件保证 dist/ 在任何时候都存在且非空——
+//go:embed all:dist 在目录不存在时会直接编译失败，
+而 Vite 的 emptyOutDir 每次构建又会清空 dist/。

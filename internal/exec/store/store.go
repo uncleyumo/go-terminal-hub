@@ -27,10 +27,24 @@ type DataStore struct {
 	SortOrder int      `json:"sortOrder"`
 }
 
+// RemoteSettings 是「手机远程接管」的配置。
+//
+// 方向是反的：本地 hub 主动拨到 relay，所以这里填的是 relay 的地址，
+// 不是本机要监听的地址。家里这台机器因此不需要公网 IP、不用端口映射。
+type RemoteSettings struct {
+	Enabled bool   `json:"enabled"`
+	URL     string `json:"url"`   // 形如 wss://hub.example.com/ws/agent
+	Token   string `json:"token"` // 与浏览器共用的预共享令牌
+	// AutoTakeover 为真时，手机连上并报出尺寸后立刻拿到控制权，
+	// 不用再点一下「接管」。
+	AutoTakeover bool `json:"autoTakeover"`
+}
+
 type Settings struct {
-	Language    string `json:"language"`
-	Theme       string `json:"theme"`
-	StartOnBoot bool   `json:"startOnBoot"`
+	Language    string         `json:"language"`
+	Theme       string         `json:"theme"`
+	StartOnBoot bool           `json:"startOnBoot"`
+	Remote      RemoteSettings `json:"remote"`
 }
 
 const (

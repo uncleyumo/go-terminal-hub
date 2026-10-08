@@ -9,8 +9,23 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as hub$0 from "../exec/hub/models.js";
 
+/**
+ * Controller 返回会话当前的控制方："desktop" 或 "web"。
+ */
+export function Controller(id: string): $CancellablePromise<string> {
+    return $Call.ByID(3024083059, id);
+}
+
 export function ListStatus(): $CancellablePromise<hub$0.RecordStatus[] | null> {
     return $Call.ByID(291041921);
+}
+
+/**
+ * ReleaseControl 把控制权让给 web 端，PTY 切到 web 上次报的尺寸。
+ * 主要给测试和调试用；正常流程里是手机端点「接管」触发的。
+ */
+export function ReleaseControl(id: string): $CancellablePromise<void> {
+    return $Call.ByID(246366617, id);
 }
 
 export function ResizeSession(id: string, cols: number, rows: number): $CancellablePromise<void> {
@@ -31,6 +46,16 @@ export function StopAllSessions(): $CancellablePromise<void> {
 
 export function StopSession(id: string): $CancellablePromise<void> {
     return $Call.ByID(740482977, id);
+}
+
+/**
+ * TakeControl 是桌面端「收回控制」按钮走的路径。
+ * 
+ * cols/rows 必须显式传：桌面在旁观状态下容器是按手机的网格撑开的，
+ * 得先恢复自己的布局、量出真实尺寸，再连同请求一起交过来。
+ */
+export function TakeControl(id: string, cols: number, rows: number): $CancellablePromise<void> {
+    return $Call.ByID(3462670177, id, cols, rows);
 }
 
 export function WriteSession(id: string, data: string): $CancellablePromise<number> {

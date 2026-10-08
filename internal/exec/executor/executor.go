@@ -185,6 +185,24 @@ func BuildEntry(store store.DataStore) Entry {
 	}
 }
 
+// 没指定网格时用的默认值。
+//
+// 谁都需要这两个数：executor 拿它去 Resize PTY，Hub 拿它记「控制方上次用的尺寸」。
+// 分开写两份的话，Hub 记的会是 0，跟 PTY 的真实尺寸对不上——
+// 接管、抖画面这些要按真实网格算的地方就全错了。
+const (
+	DefaultCols uint16 = 80
+	DefaultRows uint16 = 25
+)
+
+// GridSize 把「0 表示没指定」的尺寸补成实际会用的值。
+func GridSize(cols, rows uint16) (uint16, uint16) {
+	if cols < 1 || rows < 1 {
+		return DefaultCols, DefaultRows
+	}
+	return cols, rows
+}
+
 // LaunchSpec 是「起一次会话」需要的全部输入。
 //
 // 它已经是拼好的结果——Entry 到它的翻译在 BuildCommand 里做完了。

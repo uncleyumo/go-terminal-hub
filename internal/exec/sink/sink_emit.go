@@ -29,8 +29,30 @@ type ExitPayload struct {
 	ErrMsg string `json:"errMsg"`
 }
 
+// LeasePayload 是 "session:lease" 事件的数据类型：某个会话的控制权换人了。
+//
+// 桌面端靠它决定自己该是「控制方」还是「旁观者」。旁观时它必须停止上报尺寸，
+// 否则窗口一缩放就会把对方的 PTY 尺寸顶掉。
+type LeasePayload struct {
+	ID         string `json:"id"`
+	Controller string `json:"controller"`
+	Cols       uint16 `json:"cols"`
+	Rows       uint16 `json:"rows"`
+}
+
+// SizePayload 是 "session:size" 事件的数据类型：PTY 的真实网格变了。
+// 旁观方按这个尺寸渲染——终端尺寸属于 PTY，不属于窗口。
+type SizePayload struct {
+	ID   string `json:"id"`
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
+}
+
 func (e *EmitSink) OnOutput(chunk []byte) {
 	slog.Debug("process output", "text", string(chunk))
+	if e.App == nil {
+		return
+	}
 	e.App.Event.Emit("session:output", OutputPayload{
 		ID:   e.Id,
 		Text: string(chunk),
@@ -38,6 +60,9 @@ func (e *EmitSink) OnOutput(chunk []byte) {
 }
 
 func (e *EmitSink) OnProcessExited(res executor.ExitResult) {
+	if e.App == nil {
+		return
+	}
 	if res.Err != nil {
 		slog.Error("process exited with error", "err", res.Err)
 		e.App.Event.Emit("session:exited", ExitPayload{
@@ -57,5 +82,8 @@ func (e *EmitSink) OnProcessExited(res executor.ExitResult) {
 
 func (e *EmitSink) OnStarted(id string) {
 	slog.Debug("process started")
+	if e.App == nil {
+		return
+	}
 	e.App.Event.Emit("session:started", id)
 }

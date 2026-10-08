@@ -3,5 +3,6 @@
 
 export type {
     DataStore,
+    RemoteSettings,
     Settings
 } from "./models.js";

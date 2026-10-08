@@ -294,3 +294,61 @@ tasks:
 # 2026-09-29 归档：原文件里 build:docker / run:docker / setup:docker / ios:device:list /
 # ios:run:device 五个 task 随 build/docker/ 与 build/ios/ 一起删掉了——它们全都引用
 # 那两个目录，留着就是指向空路径的死任务。跨平台要加回来时从 git 历史取。
+
+  # —— 远程接管的 Web 端（扩展项目，见 remote/README.md）——
+  #
+  # 它跟桌面端是两套独立的前端 + 两个独立的二进制：
+  #   remote/ui   → 手机浏览器打开的页面，被嵌进 relay
+  #   remote/relay → 部署到云服务器上的单文件二进制
+  #
+  # 桌面端不 import remote/ 包，所以这些产物不会进 go-terminal-hub.exe。
+
+  install:relay:ui:deps:
+    summary: Install the web UI dependencies
+    run: once
+    dir: remote/ui
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules
+    cmds:
+      - npm install
+
+  build:relay:ui:
+    summary: Build the remote web UI (its dist/ is what the relay embeds)
+    run: once
+    dir: remote/ui
+    sources:
+      - "src/**/*"
+      - index.html
+      - vite.config.ts
+      - package.json
+    generates:
+      - dist/**/*
+    deps:
+      - task: install:relay:ui:deps
+    cmds:
+      - npm run build
+
+  build:relay:
+    summary: Build the relay binary for Linux (single file, no runtime deps)
+    # 必须先构建 UI：relay 用 //go:embed 把 remote/ui/dist 嵌进去，
+    # 目录不存在的话 go build 直接编译失败。和桌面端的 frontend/dist 同一个约束。
+    deps:
+      - task: build:relay:ui
+    cmds:
+      - cmd: powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path bin | Out-Null"
+      # 交叉编译的环境变量走下面的 env: 块，不要塞进 powershell -Command 里：
+      # go-task 会先把命令行交给一层 shell，$env: 会被那层吃掉变成空串
+      # （实测报 "The term ':CGO_ENABLED=0' is not recognized"）。
+      # 版本号和构建时间跟桌面端共用 internal/buildinfo，同一个 -X 目标。
+      # 启动日志会打出来——服务器上可能同时躺着好几个 hub-relay，
+      # 排查第一件事就是确认「现在跑的是哪一个」。
+      - go build -trimpath -ldflags "-s -w -X github.com/uncleyumo/go-terminal-hub/internal/buildinfo.version={{.APP_VERSION}} -X github.com/uncleyumo/go-terminal-hub/internal/buildinfo.buildTime={{.BUILD_TIME}}" -o bin/hub-relay ./remote/relay
+    env:
+      # CGO 关掉才有静态链接；Windows 上没有 Linux 的 libc，
+      # 开着 CGO 交叉编译会直接失败。
+      CGO_ENABLED: '0'
+      GOOS: linux
+      GOARCH: amd64
