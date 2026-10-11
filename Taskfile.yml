@@ -91,6 +91,13 @@ tasks:
     cmds:
       - task: common:build:relay
 
+  url:
+    summary: Prints the phone URL, token included, for pasting into a wrapped app
+    # 令牌从桌面端的 settings.json 里读，所以换过令牌之后重跑一次就行，
+    # 不用在两处同步。细节见 tools/huburl/main.go。
+    cmds:
+      - go run ./tools/huburl
+
   build:server:
     summary: Builds the application in server mode (no GUI, HTTP server only)
     cmds:

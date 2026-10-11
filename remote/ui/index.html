@@ -13,6 +13,26 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="color-scheme" content="dark light" />
+
+    <!--
+      让「添加到主屏幕」把它当成独立应用：没有地址栏、没有底栏。
+      manifest 里的 start_url 是 ./，故意不带令牌——manifest 是公开文件，
+      把令牌写进去等于发给每个访客。令牌由 token.ts 存在 localStorage 里补上。
+      图标是 build/appicon.png 缩出来的，跟桌面端用同一张。
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- 状态栏/任务栏跟页面底色对齐，别在上面露出一条白边 -->
+    <meta name="theme-color" content="#12141a" />
+
+    <!-- iOS 加到主屏后全屏；状态栏透明，页面自己用 safe-area 留边 -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="terminal hub" />
+
     <title>terminal hub</title>
   </head>
   <body>
