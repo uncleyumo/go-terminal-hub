@@ -7,6 +7,7 @@ import { HubClient, type ConnectionState, type ControlMessage, type SessionInfo 
 import LoginView from './components/LoginView.vue'
 import SessionList from './components/SessionList.vue'
 import TerminalView from './components/TerminalView.vue'
+import { resetAutoToken } from './token'
 
 type View = 'login' | 'list' | 'terminal'
 
@@ -52,6 +53,9 @@ const termRef = useTemplateRef<InstanceType<typeof TerminalView>>('term')
 const connected = () => connState.value === 'open'
 
 function startClient() {
+  // 换客户端之前先关掉旧的：留着的话它会一直重连，和新连接互相顶，
+  // 日志里就会出现成对出现的连接。
+  client.value?.close()
   const c = new HubClient({
     onState: (state, detail) => {
       connState.value = state
@@ -69,6 +73,12 @@ function startClient() {
       }
       if (state === 'open') {
         c.list()
+      }
+      if (state === 'closed') {
+        // 断线有两种：网络不通（继续重连就好），和登录没了（得回登录页）。
+        // 从关闭码上分不出来——服务端拒握手时浏览器只给一个 1006，和网线拔了
+        // 长得一模一样。所以直接问 /api/me。
+        void checkStillAuthed()
       }
     },
     onControl: handleControl,
@@ -91,7 +101,7 @@ function handleControl(m: ControlMessage) {
         const updated = sessions.value.find((s) => s.id === current.value!.id)
         if (updated) current.value = updated
       }
-      void restoreLastSession()
+      void afterSessions()
       break
     case 'attached':
       controller.value = m.controller ?? 'desktop'
@@ -132,11 +142,39 @@ function writeNotice(text: string) {
   termRef.value?.writeOutput(new TextEncoder().encode(text))
 }
 
+// 断线之后问一句「我还进得去吗」。
+//
+// relay 的会话存在内存里（`authenticator.sessions` 是个 map），它重启一次，
+// 所有人的 cookie 就同时失效了。这时候 WebSocket 握手会被 401 拒掉，可浏览器
+// 只看到一个 1006 异常关闭 —— 和「网线断了」完全一样。光看重连状态是分不出来的，
+// 而这两种要处理的方式正相反：网络问题该继续等，登录没了该回登录页换 cookie。
+//
+// 网络不通时 fetch 自己会抛，那种情况什么都不做，接着重连。
+let checkingAuth = false
+async function checkStillAuthed() {
+  if (checkingAuth) return
+  checkingAuth = true
+  try {
+    const res = await fetch('/api/me').catch(() => null)
+    if (!res || res.status !== 401) return
+
+    client.value?.close()
+    // 令牌还是好的，坏的只是 cookie。放行让登录页拿它重新换一次。
+    resetAutoToken()
+    current.value = null
+    view.value = 'login'
+  } finally {
+    checkingAuth = false
+  }
+}
+
 async function openSession(s: SessionInfo, takeOver = false) {
   current.value = s
   controller.value = 'desktop'
   size.value = null
   view.value = 'terminal'
+  // 补一条历史记录，理由见 onPopState
+  history.pushState({ view: 'terminal' }, '')
   writeStored(LAST_SESSION_KEY, s.id)
   // 等终端组件挂上再 attach：输出的写入口是那个组件，
   // 早于它挂载到达的回放会没地方落。
@@ -145,7 +183,25 @@ async function openSession(s: SessionInfo, takeOver = false) {
   if (takeOver) client.value?.takeover()
 }
 
+// 安卓的返回键 / 返回手势。
+//
+// 页面本来只有一条历史记录，所以在终端界面按返回，系统没有可回退的条目，
+// 直接把 App 关掉——用户想回会话列表，结果退出了整个应用。包成 App 的 WebView
+// 和「加到主屏」的 PWA 都按这套规则走，浏览器标签页里也一样。
+//
+// 进终端时补一条历史，返回时浏览器先回退它，落到列表上。
+function onPopState() {
+  if (view.value === 'terminal') doBackToList()
+}
+
+// 界面上那个 ‹ 也走历史，让按钮和返回键是同一条路。
+// 分开走的话会出现「点了按钮之后，返回键要多按一次才退出去」这种错位。
 function backToList() {
+  if (history.state?.view === 'terminal') history.back()
+  else doBackToList()
+}
+
+function doBackToList() {
   client.value?.detach()
   current.value = null
   view.value = 'list'
@@ -155,11 +211,24 @@ function backToList() {
   client.value?.list()
 }
 
-// 刷新之后自动回到原来那个会话；如果刷新前正握着控制权，也一并要回来。
-// 只做一次——用户自己退回列表之后就不该再被拽回去。
+// 会话列表到手之后，决定要不要绑定会话。两条路：
+//
+// 1. 正在看某个会话 —— 必须重新 attach。socket 一断 attachedId 就被清空，
+//    不重新绑定的话终端画面一直冻着，敲键盘没有任何反应，而且看不出哪里不对。
+//    手机上切 WiFi/蜂窝、锁屏回来、relay 重启都会断一次，这条比第 2 条常用得多。
+// 2. 刚打开页面（或刷新）—— 回到上次看的那个会话，刷新前握着控制权也一并要回来。
+//    只做一次：用户自己退回列表之后，不该再被拽回去。
 let restorePending = true
 
-async function restoreLastSession() {
+async function afterSessions() {
+  if (view.value === 'terminal' && current.value) {
+    // 已经绑着就别再绑：重复 attach 会让服务端重放一遍字节日志，画面会闪一下
+    if (client.value?.attached) return
+    await nextTick()
+    client.value?.attach(current.value.id)
+    return
+  }
+
   if (!restorePending) return
   restorePending = false
 
@@ -185,11 +254,20 @@ async function restoreLastSession() {
 // 一条浏览器连接只能绑一个会话，多开没法各自路由。
 function onVisibilityChange() {
   if (document.visibilityState !== 'visible') return
-  if (connState.value === 'superseded') client.value?.reconnectNow()
+  if (connState.value === 'superseded') {
+    client.value?.reconnectNow()
+    return
+  }
+  // 从后台或锁屏回来。安卓会挂起后台的 WebView，服务端那侧多半已经把 socket
+  // 掐了；浏览器随后会补一个 onclose，重连和重新绑定都走那条路。
+  // 但 close 事件有可能还在路上，这一小段时间里界面看着还是「已连接」，
+  // 敲键盘却没有任何反应。所以顺手确认一次登录状态：只有 401 才动。
+  if (connState.value !== 'open') void checkStillAuthed()
 }
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('popstate', onPopState)
   // 先问一句 cookie 还有效吗。直接连 WebSocket 的话，未登录只会得到一个
   // 语焉不详的握手失败，用户看不到「该输令牌了」。
   const res = await fetch('/api/me').catch(() => null)
@@ -197,11 +275,19 @@ onMounted(async () => {
     view.value = 'login'
     return
   }
+  // cookie 还有效就直接进列表。
+  //
+  // 少了这一句会停在登录页上：view 的初始值就是 'login'，而除了这里，
+  // 只有「登录成功」和「恢复上次那个会话」会把它推到 'list'。
+  // 没记住会话时（比如刚从终端退回列表又刷新）两条都不成立，页面就卡在
+  // 登录页——明明已经登录着，却还在让人输令牌。
+  view.value = 'list'
   startClient()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('popstate', onPopState)
   client.value?.close()
 })
 
@@ -243,6 +329,13 @@ function onLoginSuccess() {
       连接断开，正在重连…
     </div>
     <div v-if="lastError" class="banner error">{{ lastError }}</div>
+
+    <!-- 电脑那头的 hub 掉线了。终端画面会冻在最后一帧，不说一句的话
+         用户只会以为卡住了。它回来时 client 会重新 list，会话列表一到
+         就自动重新绑定（见 afterSessions）。 -->
+    <div v-if="view === 'terminal' && !agentOnline" class="banner warn">
+      电脑上的 hub 没在线，画面停在最后一帧。它回来会自动接上
+    </div>
 
     <SessionList
       v-if="view === 'list'"

@@ -68,6 +68,17 @@ export class HubClient {
 
   constructor(private handlers: Handlers) {}
 
+  /**
+   * 当前是否已经绑定了会话。
+   *
+   * 断线时 attachedId 会被清空，所以重连之后它是 false —— 外面靠这个判断
+   * 「要不要重新 attach」。不判断的话每次会话列表刷新都会重绑一次，
+   * 而重绑会让服务端把字节日志重放一遍，画面上看着像闪了一下。
+   */
+  get attached(): boolean {
+    return this.attachedId !== null
+  }
+
   /** 自动连（页面加载时）。 */
   connect() {
     this.stopped = false

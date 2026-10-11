@@ -48,11 +48,14 @@ async function submit() {
 
 // 有现成的令牌就直接登录，不用手输。只试一次：失败了就把输入框留给用户，
 // 免得拿一个坏令牌反复撞服务端每分钟 5 次的限速。
-onMounted(() => {
+onMounted(async () => {
   const t = takeAutoToken()
   if (!t) return
   token.value = t
-  void submit()
+  await submit()
+  // 自动试的那次没成，说明存的那个已经废了。把框清空，用户直接敲新的就行，
+  // 不用先全选删掉一长串乱码——那是密码框，看不清还删不干净。
+  if (error.value) token.value = ''
 })
 </script>
 

@@ -15,6 +15,7 @@ import (
 	"flag"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -246,6 +247,14 @@ func (s *server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 	c.readLoop(s.relay.onBrowserFrame)
 	s.relay.clearBrowser(c)
 	slog.Info("browser disconnected")
+}
+
+// Go 的 mime 表里没有 .webmanifest（实测 go1.25.8，TypeByExtension 返回空串），
+// http.FileServer 只好嗅探内容，嗅出来是 text/plain。
+// 而浏览器只把 JSON 类型的 manifest 当 manifest——类型不对就当作没写，
+// 「添加到主屏幕」退回普通网页，而且只在控制台留一条警告，页面上看不出异常。
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
 // handleStatic 提供网页本体。

@@ -394,7 +394,7 @@ watch(fontSize, () => {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg-elev);
-  color: var(--ink);
+  color: var(--text);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;

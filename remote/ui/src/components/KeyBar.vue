@@ -33,8 +33,19 @@ const emit = defineEmits<{
 const COLLAPSE_KEY = 'hub.remote.keybar.collapsed'
 const MORE_KEY = 'hub.remote.keybar.more'
 
-const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
-const more = ref(localStorage.getItem(MORE_KEY) === '1')
+// 读也要包 try：隐私模式、WebView 里关掉 DOM storage 都会抛。
+// 抛在 setup() 里会让整个键盘栏渲染不出来——而它只是记个展开状态，
+// 丢了大不了回到默认，不该把终端页带塌。
+function recall(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+const collapsed = ref(recall(COLLAPSE_KEY))
+const more = ref(recall(MORE_KEY))
 
 function remember(key: string, value: boolean) {
   try {

@@ -104,3 +104,12 @@ export function takeAutoToken(): string | null {
   taken = true
   return token
 }
+
+// 允许自动登录再试一次。
+//
+// 用在「cookie 没了」这条路上：relay 的会话存在内存里，它重启一次所有人的
+// cookie 就都失效了，但手里的令牌还是好的。回登录页时得拿它重新换一次 cookie，
+// 所以这里把「只试一次」的闸重新打开。
+export function resetAutoToken(): void {
+  taken = false
+}
