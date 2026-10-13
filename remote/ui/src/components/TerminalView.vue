@@ -35,6 +35,10 @@ const ctrl = ref(false)
 const shift = ref(false)
 /** 视图停在回滚历史里（不在最底部）。用来提示「你现在看的不是最新的」。 */
 const scrolledUp = ref(false)
+/** 停在历史上时，视口顶部离底部还有多少行。给「回到底部」当副标题。 */
+const linesAbove = ref(0)
+/** 停在历史上时底下又来了输出。不清掉的话，你不知道自己正在漏看。 */
+const freshOutput = ref(false)
 /** 发图过程里的提示（正在压、存到哪了、失败了）。 */
 const uploadMsg = ref('')
 const uploading = ref(false)
@@ -86,34 +90,39 @@ function applyViewerSize() {
 
 // --- 上下翻 -----------------------------------------------------------------
 
+/** 一次点按滚的行数。整页一跳在手机上跨 20~40 行，点完不知道自己停在哪。 */
+const SCROLL_STEP = 3
+
 /**
  * 上翻（dir=-1）/ 下翻（dir=1）。
  *
  * 两种程序要分开处理，不能一刀切：
  *   - **全屏程序**（vim / less / top）：画面归它自己管，xterm 里没有可滚的历史，
- *     只能把 PageUp / PageDown 这两个键发过去让它翻。
+ *     只能把 PageUp / PageDown 这两个键发过去让它翻——翻多少是它说了算。
  *   - **普通输出**（shell、claude code）：历史就在 xterm 自己的回滚缓冲里，
  *     直接滚本地最可靠——发字节过去没人理。
  */
-function scrollPage(dir: -1 | 1) {
+function scrollStep(dir: -1 | 1) {
   if (!term) return
   if (term.buffer.active.type === 'alternate') {
     write(dir < 0 ? '\x1b[5~' : '\x1b[6~')
     return
   }
-  term.scrollPages(dir)
+  term.scrollLines(dir * SCROLL_STEP)
 }
 
 function scrollToLatest() {
   term?.scrollToBottom()
+  freshOutput.value = false
 }
 
-/** 手指拖不动 xterm 的回滚缓冲时，这两个按钮就是唯一的出路，所以一直显示。 */
 function syncScrollState() {
   if (!term) return
   const b = term.buffer.active
   const up = b.viewportY < b.baseY
   if (up !== scrolledUp.value) scrolledUp.value = up
+  linesAbove.value = up ? b.baseY - b.viewportY : 0
+  if (!up) freshOutput.value = false
 }
 
 // --- 输入 -------------------------------------------------------------------
@@ -284,6 +293,9 @@ function writeOutput(bytes: Uint8Array) {
     term.write(RIS)
     return
   }
+  // 停在历史里时底下又来了东西：记一笔，「回到底部」上亮起来。
+  // 不自动滚到底——你正看着的那段会被顶走，那比漏看还难受。
+  if (scrolledUp.value) freshOutput.value = true
   term.write(bytes)
 }
 
@@ -325,7 +337,28 @@ watch(fontSize, () => {
 
 <template>
   <div class="term-wrap">
-    <div ref="host" class="term-host" :class="{ viewer: !isController() }"></div>
+    <!-- .term-area 只负责给「回到底部」当定位锚，.term-host 里只有 xterm 一个人往里塞 DOM。
+         把 Vue 的按钮直接塞进 .term-host 会跟 xterm 追加的节点抢兄弟索引。 -->
+    <div class="term-area">
+      <div ref="host" class="term-host" :class="{ viewer: !isController() }"></div>
+
+      <!-- 上翻时的「回到底部」。绝对定位浮在终端右下角，不进布局流。
+           它以前插在下面那排按钮中间，一出现就把「发图 / 交还控制」挤成两行：
+           底栏变高 → 终端区变矮 → ResizeObserver 立刻重新 fit → 向 PTY 重报行列数
+           → 桌面端整屏重排。点一次上翻的代价变成远端重画一整屏。 -->
+      <Transition name="jump">
+        <button
+          v-if="scrolledUp"
+          class="jump-bottom"
+          :class="{ fresh: freshOutput }"
+          @click="scrollToLatest"
+        >
+          <span class="jump-arrow">↓</span>
+          <span>回到底部</span>
+          <span v-if="linesAbove > 0" class="jump-count">{{ linesAbove }} 行</span>
+        </button>
+      </Transition>
+    </div>
 
     <!-- 只在连着的时候显示。没连上时顶部那条横幅已经说明原因了，
          这里再挂一条「未连接」+ 灰掉的按钮只是噪声。 -->
@@ -338,9 +371,8 @@ watch(fontSize, () => {
     </div>
 
     <div class="fontbar">
-      <button class="btn icon" title="上翻一页" @click="scrollPage(-1)">▲</button>
-      <button class="btn icon" title="下翻一页" @click="scrollPage(1)">▼</button>
-      <button v-if="scrolledUp" class="btn hot" @click="scrollToLatest">回到底部</button>
+      <button class="btn icon" :title="`上翻 ${SCROLL_STEP} 行`" @click="scrollStep(-1)">▲</button>
+      <button class="btn icon" :title="`下翻 ${SCROLL_STEP} 行`" @click="scrollStep(1)">▼</button>
       <button class="btn icon" @click="fontSize = Math.max(8, fontSize - 1)">A-</button>
       <span class="dim size">{{ fontSize }}</span>
       <button class="btn icon" @click="fontSize = Math.min(24, fontSize + 1)">A+</button>
@@ -379,6 +411,19 @@ watch(fontSize, () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 底栏高度是常量。任何瞬时状态都不得改变它——
+     它一变，终端区跟着变，ResizeObserver 就把新行列数报给 PTY，远端整屏重排。 */
+  --fontbar-h: 47px;
+}
+
+/* 终端区 + 浮在它上面的「回到底部」。定位锚是这层，
+   .term-host 保持只装 xterm，两者互不干扰。 */
+.term-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 发图的进度/结果提示。浮在终端上方，不占布局高度——
@@ -402,11 +447,15 @@ watch(fontSize, () => {
 }
 
 .fontbar {
-  flex: 0 0 auto;
+  /* 高度钉死，宽度永不换行。加东西改这里，别让它自己长高。 */
+  flex: 0 0 var(--fontbar-h);
+  height: var(--fontbar-h);
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
+  flex-wrap: nowrap;
+  overflow: hidden;
   background: var(--bg-elev);
   border-top: 1px solid var(--border);
 }
@@ -414,6 +463,9 @@ watch(fontSize, () => {
 .fontbar .btn {
   min-height: 34px;
   padding: 0 12px;
+  /* 挤不下就先吃边距，绝不让文字折行——一折行整条底栏就变高了 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* 一排按钮要挤进手机宽度，图标按钮就别留那么宽的边 */
@@ -421,14 +473,93 @@ watch(fontSize, () => {
   padding: 0 9px;
 }
 
-.fontbar .btn.hot {
-  border-color: var(--warn);
-  color: var(--warn);
+.fontbar .spacer {
+  min-width: 0;
 }
 
 .size {
   font-size: 13px;
   min-width: 20px;
   text-align: center;
+  flex-shrink: 0;
+}
+
+/* 窄屏再收一档边距，保证「交还控制」不被挤掉 */
+@media (max-width: 380px) {
+  .fontbar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .fontbar .btn {
+    padding: 0 8px;
+  }
+  .fontbar .btn.icon {
+    padding: 0 7px;
+  }
+}
+
+/* --- 回到底部：浮在终端上，不进布局流 ------------------------------------- */
+
+.jump-bottom {
+  position: absolute;
+  right: 12px;
+  /* 锚在 .term-area：它的底边就是底栏的上边，贴上去正好 */
+  bottom: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.jump-bottom:active {
+  background: #232838;
+}
+
+/* 底下又来了输出。整颗药丸换成强调色，比一个小圆点在手机上好认得多 */
+.jump-bottom.fresh {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.jump-arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.jump-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jump-bottom.fresh .jump-count {
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+/* 出现/消失是这一屏唯一一处动效。从轻微下落进位，回位快于出现。 */
+.jump-enter-active {
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jump-leave-active {
+  transition:
+    opacity 0.12s ease-in,
+    transform 0.12s ease-in;
+}
+.jump-enter-from,
+.jump-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
 }
 </style>
