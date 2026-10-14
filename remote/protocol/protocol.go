@@ -40,6 +40,27 @@ const (
 	// 而发图是低频操作，多 33% 的 base64 开销换一条独立的通道，值。
 	TypeUpload MsgType = "upload"
 
+	// TypeRegisterSecret 让 agent 把「登陆密钥」登记到中央站。
+	//
+	// 为什么要有它：浏览器登录用的密钥必须存在中央站（relay 每次登录都要比对），
+	// 但不能由你手动填到服务器上——那等于密钥要经手第二个人。
+	// 让桌面端自己生成、自己登记，密钥就只在这一条消息里明文出现一次。
+	//
+	// 只在 agent 连接的生命周期内有效：agent 一断，这条 key 下的密钥登记
+	// 也跟着失效（浏览器再登录会被拒），直到 agent 重连再登记一次。
+	// 这是刻意的——agent 不在线时，没有人该能进那台机器的终端。
+	TypeRegisterSecret MsgType = "register_secret"
+
+	// TypeRegistered relay 回复：密钥登记成功。
+	TypeRegistered MsgType = "registered"
+
+	// TypeRegisterRejected relay 回复：登记被拒。
+	//
+	// 和 TypeError 分开：这条专指登记失败，Msg 里说明原因
+	//（key 不存在 / 已过期 / 已吊销）。agent 收到后应当把原因显示在设置面板里，
+	// 而不是笼统的「连接失败」——那三种原因在界面上长得一样，排查时完全分不清。
+	TypeRegisterRejected MsgType = "register_rejected"
+
 	// hub → 浏览器
 	TypeSessions MsgType = "sessions"
 	TypeAttached MsgType = "attached"
@@ -79,6 +100,12 @@ const (
 	// 客户端要停下来别再抢；而这一条只是自己换了条线，**绝不能重连**——
 	// 重连就会把刚建立的那条顶掉，旧的再重连，来回踢成死循环。
 	CloseSuperseded = 4005
+
+	// CloseKeyRevoked 是这个 key 被吊销/删除了，中央站主动踢掉它的所有连接。
+	//
+	// 客户端收到后应当停止重连：再连也是同一个 key，还是会被拒。
+	// 界面上要显示「这个 key 已失效」，而不是笼统的「连接失败」。
+	CloseKeyRevoked = 4006
 )
 
 // Controller 的取值。
@@ -114,10 +141,20 @@ type Message struct {
 
 	Sessions []SessionInfo `json:"sessions,omitempty"`
 
-	// 发图用。Data 是图片的 base64，Path 是 hub 存好之后的位置。
+	// Data 是图片的 base64，Path 是 hub 存好之后的位置。
 	Data      string `json:"data,omitempty"`
 	MediaType string `json:"mediaType,omitempty"`
 	Path      string `json:"path,omitempty"`
+
+	// Secret 是 register_secret 携带的登陆密钥。
+	//
+	// 单独一个字段而不塞进 Msg：Msg 会出现在各种日志和错误回执里，
+	// 而这个值是浏览器登录的凭据，不能有任何多余的地方接触到它。
+	Secret string `json:"secret,omitempty"`
+
+	// Key 是这次操作对应的使用 key。relay 用它在数据库里查归属，
+	// 出错时也靠它说清是哪个 key 出了问题。
+	Key string `json:"key,omitempty"`
 
 	Code   int    `json:"code,omitempty"`
 	ErrMsg string `json:"errMsg,omitempty"`

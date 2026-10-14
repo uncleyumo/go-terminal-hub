@@ -7,6 +7,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -42,10 +43,17 @@ const (
 )
 
 // Config 是远程接管的配置，落在 settings.json 里。
+//
+// Key 和 Secret 是两层身份，不能混：
+//
+//	Key    使用 key，中心站签发的凭证，只在 Authorization 头里出现，
+//	       永远不给浏览器用户看。
+//	Secret 登陆密钥，由本机生成后登记到中心站，最终用户（手机）拿它登录。
 type Config struct {
 	Enabled      bool   `json:"enabled"`
 	URL          string `json:"url"`
-	Token        string `json:"token"`
+	Key          string `json:"key"`
+	Secret       string `json:"secret"`
 	AutoTakeover bool   `json:"autoTakeover"`
 }
 
@@ -92,7 +100,7 @@ func (a *Agent) Apply(cfg Config) {
 	a.cfg = cfg
 	a.mu.Unlock()
 
-	if !cfg.Enabled || cfg.URL == "" || cfg.Token == "" {
+	if !cfg.Enabled || cfg.URL == "" || cfg.Key == "" {
 		a.setStatus(Status{State: StateDisabled, URL: cfg.URL})
 		return
 	}
@@ -233,13 +241,23 @@ func (a *Agent) run(ctx context.Context, done chan struct{}, cfg Config) {
 func (a *Agent) connectOnce(ctx context.Context, cfg Config) error {
 	ws, _, err := websocket.Dial(ctx, cfg.URL, &websocket.DialOptions{
 		// agent 是 Go 程序，能设请求头，所以用 Bearer；浏览器不能，走 cookie。
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + cfg.Token}},
+		// 那个头里带的是**使用 key**，不是登陆密钥。
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + cfg.Key}},
 	})
 	if err != nil {
 		return err
 	}
 	defer ws.CloseNow()
 	ws.SetReadLimit(readLimit)
+
+	// 密钥登记要赶在任何会话转发之前：中心站必须先知道这个 key 的登陆密钥，
+	// 手机端才登得进来。发完等一句 registered，失败要让人看得见原因。
+	if cfg.Secret != "" {
+		if err := registerSecret(ctx, ws, cfg.Secret); err != nil {
+			slog.Warn("register secret failed", "err", err)
+			return err
+		}
+	}
 
 	b := newBridge(ctx, a, ws, cfg)
 	a.mu.Lock()
@@ -271,4 +289,47 @@ func errText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// registerSecret 把登陆密钥登记到中心站。
+//
+// 必须等回执：中心站可能拒（key 过期、已吊销、密钥太短），
+// 那时要让人看见原因，而不是「连上了但手机登不进来」这种事后才发现的问题。
+// 回执里的 Msg 直接是中心站给的人话原因。
+func registerSecret(ctx context.Context, ws *websocket.Conn, secret string) error {
+	msg, err := protocol.Encode(protocol.Message{
+		Type:   protocol.TypeRegisterSecret,
+		Secret: secret,
+	})
+	if err != nil {
+		return err
+	}
+	if err := ws.Write(ctx, websocket.MessageText, msg); err != nil {
+		return fmt.Errorf("发送 register_secret: %w", err)
+	}
+
+	// 等回执，最多 10 秒。中心站不回就当失败——宁可重试也不能假装登记成功。
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	for {
+		typ, data, err := ws.Read(ctx)
+		if err != nil {
+			return fmt.Errorf("等 register_secret 回执: %w", err)
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		m, err := protocol.Decode(data)
+		if err != nil {
+			continue
+		}
+		switch m.Type {
+		case protocol.TypeRegistered:
+			return nil
+		case protocol.TypeRegisterRejected:
+			return fmt.Errorf("中心站拒绝了登陆密钥: %s", m.Msg)
+		}
+		// 别的控制消息先放过去，桥还没起，丢了也无所谓。
+	}
 }

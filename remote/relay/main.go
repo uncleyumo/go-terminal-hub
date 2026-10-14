@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"io/fs"
@@ -24,19 +25,21 @@ import (
 	"github.com/coder/websocket"
 	"github.com/uncleyumo/go-terminal-hub/internal/buildinfo"
 	"github.com/uncleyumo/go-terminal-hub/remote/protocol"
+	"github.com/uncleyumo/go-terminal-hub/remote/relaydb"
 	"github.com/uncleyumo/go-terminal-hub/remote/ui"
 )
 
 type server struct {
 	auth       *authenticator
 	relay      *relay
+	db         *sql.DB
 	acceptOpts *websocket.AcceptOptions
 }
 
 func main() {
 	var (
 		addr      = flag.String("addr", "127.0.0.1:8080", "监听地址。默认只听本机；要对公网开放必须显式写 0.0.0.0:8080")
-		token     = flag.String("token", "", "预共享令牌（也可用环境变量 RELAY_TOKEN）。必填——没有令牌就不启动")
+		dbPath    = flag.String("db", relaydb.DefaultPath, "SQLite 数据库文件路径。必须和 hubkey 用的是同一个文件")
 		cookieTLS = flag.Bool("cookie-secure", true, "给 cookie 加 Secure 标记。本地用 http 调试时设 false")
 		trustFwd  = flag.Bool("trust-proxy", false, "信任 X-Forwarded-For。放在反代后面时打开")
 		origins   = flag.String("origin", "", "允许的 WebSocket Origin，逗号分隔。反代重写 Host 后需要填公网域名")
@@ -47,22 +50,18 @@ func main() {
 
 	initLogger(*level)
 
-	shared := *token
-	if shared == "" {
-		shared = os.Getenv("RELAY_TOKEN")
-	}
-	if shared == "" {
-		// 这个进程能把任意按键送进一台真实电脑的终端。没有令牌就等于把 shell 挂在公网上。
-		slog.Error("no token configured; refusing to start. pass -token or set RELAY_TOKEN")
+	db, err := relaydb.Open(*dbPath)
+	if err != nil {
+		// 起不来就说清楚是哪个文件：最常见的失败就是路径写错或目录没权限。
+		slog.Error("open relay database failed", "db", *dbPath, "err", err)
 		os.Exit(1)
 	}
-	if len(shared) < 16 {
-		slog.Warn("token is shorter than 16 characters; consider using a longer random one")
-	}
+	defer db.Close()
 
 	s := &server{
-		auth:  newAuthenticator(shared, *cookieTLS, *trustFwd),
+		auth:  newAuthenticator(db, *cookieTLS, *trustFwd),
 		relay: newRelay(),
+		db:    db,
 		acceptOpts: &websocket.AcceptOptions{
 			InsecureSkipVerify: *anyOrigin,
 		},
@@ -86,13 +85,15 @@ func main() {
 		// 空闲连接由 conn 自己的 ping/pong 兜住。
 	}
 
-	// 启动就报版本和构建时间。这台机器上可能同时躺着好几个 hub-relay，
-	// 排查时第一件要确认的事就是「现在跑的是哪一个」。
+	// 启动就报版本、构建时间、数据库路径。这台机器上可能同时躺着好几个 hub-relay，
+	// 排查时第一件要确认的事就是「现在跑的是哪一个、连的是哪个库」——
+	// 「签证成功了但连不上」十有八九是这两个对不上。
 	info := buildinfo.Info()
 	slog.Info("relay starting",
 		"version", orUnknown(info.Version),
 		"built", orUnknown(info.BuildTime),
 		"addr", *addr,
+		"db", *dbPath,
 	)
 	slog.Info("relay listening", "addr", *addr)
 	if err := httpServer.ListenAndServe(); err != nil {
@@ -152,10 +153,22 @@ func describeClient(r *http.Request) string {
 // handleAgent 接受本地 hub 拨进来的连接。
 //
 // agent 是 Go 程序，能设 Authorization 头，所以走 Bearer 而不是 cookie。
+// 那个头里带的是**使用 key**，不是登陆密钥——密钥只在浏览器登录时出现。
 func (s *server) handleAgent(w http.ResponseWriter, r *http.Request) {
-	if !s.auth.checkToken(bearerToken(r)) {
-		slog.Warn("agent rejected: bad token", "ip", s.auth.clientIP(r))
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	key := bearerToken(r)
+	switch st := s.auth.checkKey(key); st {
+	case KeyOK:
+	case KeyNotFound:
+		slog.Warn("agent rejected: unknown key", "ip", s.auth.clientIP(r))
+		http.Error(w, "unknown key", http.StatusUnauthorized)
+		return
+	case KeyExpired:
+		slog.Warn("agent rejected: expired key", "ip", s.auth.clientIP(r))
+		http.Error(w, "key expired", http.StatusUnauthorized)
+		return
+	case KeyRevoked:
+		slog.Warn("agent rejected: revoked key", "ip", s.auth.clientIP(r))
+		http.Error(w, "key revoked", http.StatusUnauthorized)
 		return
 	}
 
@@ -165,27 +178,69 @@ func (s *server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 槽位必须先建再装连接：后面每一步都要靠它找到对的那一套。
+	// 超过并发上限时这里会是 nil，拒掉而不是抢别人的位置。
+	sl := s.relay.getOrCreateSlot(key)
+	if sl == nil {
+		slog.Error("slot limit reached, rejecting agent", "key", key)
+		http.Error(w, "server busy", http.StatusServiceUnavailable)
+		return
+	}
+
 	// 用 Background 而不是 r.Context()：handler 返回时 r.Context() 会被取消，
 	// 而那时写协程可能还在发队列里剩下的帧（关闭帧、kicked 通知）。
 	// 连接的生命周期由写协程自己管，不由 HTTP 请求管。
 	c := newConn(context.Background(), ws, "agent")
-	old := s.relay.setAgent(c)
+	c.key = key
+	old := s.relay.setAgent(key, c)
 	if old != nil {
-		// hub 重启后会带着同样的令牌重新拨进来，把僵死的旧连接顶掉。
+		// hub 重启后会带着同样的 key 重新拨进来，把僵死的旧连接顶掉。
 		// agent 收到 4002 应当退避一段时间再重连，免得两个桌面实例互相顶。
 		old.close(protocol.CloseAgentReplaced, "replaced by a newer agent")
 	}
-	slog.Info("agent connected", "ip", s.auth.clientIP(r), "client", describeClient(r))
+	slog.Info("agent connected",
+		"key", key, "ip", s.auth.clientIP(r), "client", describeClient(r))
 
-	s.relay.greetAgent(c)
-	c.readLoop(s.relay.onAgentFrame)
-	s.relay.clearAgent(c)
-	slog.Info("agent disconnected")
+	s.relay.greetAgent(key, c)
+
+	// 读循环里要拦一道 register_secret：那条是登记密钥的，不该透传给浏览器。
+	c.readLoop(func(typ websocket.MessageType, data []byte) bool {
+		if typ == websocket.MessageText {
+			if m, err := protocol.Decode(data); err == nil && m.Type == protocol.TypeRegisterSecret {
+				s.handleRegisterSecret(key, c, m)
+				return true
+			}
+		}
+		return s.relay.onAgentFrame(key, typ, data)
+	})
+	s.relay.clearAgent(key, c)
+	slog.Info("agent disconnected", "key", key)
+}
+
+// handleRegisterSecret 处理桌面端登记登陆密钥。
+//
+// 密钥只在这一条消息里明文出现。存库之前先哈希，日志里一个字都不打。
+func (s *server) handleRegisterSecret(key string, c *conn, m protocol.Message) {
+	if err := s.auth.registerSecret(key, m.Secret); err != nil {
+		slog.Warn("register_secret rejected", "key", key, "err", err)
+		c.sendJSON(protocol.Message{
+			Type: protocol.TypeRegisterRejected,
+			Key:  key,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	slog.Info("secret registered", "key", key)
+	c.sendJSON(protocol.Message{Type: protocol.TypeRegistered, Key: key})
 }
 
 // handleBrowser 接受手机/浏览器连进来的连接。
+//
+// 进来先问「这是谁」：cookie 里带着 key，所有后续操作都在那个 key 的槽位里做。
+// 以前只有一套槽位，不需要问；现在不问就会串到别人的终端上。
 func (s *server) handleBrowser(w http.ResponseWriter, r *http.Request) {
-	if !s.auth.authed(r) {
+	key, ok := s.auth.authed(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -199,17 +254,28 @@ func (s *server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 	// 同 agent：不能用 r.Context()，否则「被顶掉」那条路径上 handler 一返回，
 	// 还没发出去的关闭帧就被取消掉了。
 	c := newConn(context.Background(), ws, "browser")
+	c.key = key
 	c.clientID = s.auth.clientID(r)
 
 	// ?force=1 表示这是人手动点的重连，跳过防踢循环的闸。
 	// 自动重连不带这个参数，所以两台设备还是踢不成死循环。
 	force := r.URL.Query().Get("force") == "1"
 
-	old, rejected := s.relay.setBrowser(c, c.clientID, force)
+	// 槽位不存在说明 agent 没连过（或已断开被清）。给一个空槽位，
+	// 让浏览器至少能连上、看到「本地 hub 离线」——而不是一条莫名的失败。
+	if s.relay.getSlot(key) == nil {
+		if s.relay.getOrCreateSlot(key) == nil {
+			slog.Error("slot limit reached, rejecting browser", "key", key)
+			http.Error(w, "server busy", http.StatusServiceUnavailable)
+			return
+		}
+	}
+
+	old, rejected := s.relay.setBrowser(key, c, c.clientID, force)
 	if rejected {
 		// 这个 clientId 刚被踢过又立刻回来了，判定为踢人循环：
 		// 关掉它，但不动当前那个浏览器 —— 否则两台手机会把对方无限踢下去。
-		slog.Warn("rejecting browser: reconnect after kick", "clientID", c.clientID)
+		slog.Warn("rejecting browser: reconnect after kick", "key", key, "clientID", c.clientID)
 		c.sendJSON(protocol.Message{Type: protocol.TypeKicked, Msg: "another device is already connected"})
 		c.close(protocol.CloseKicked, "reconnect too soon after being kicked")
 		return
@@ -224,16 +290,17 @@ func (s *server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		// 就会来回顶成死循环。
 		sameClient := c.clientID != "" && old.clientID == c.clientID
 		if sameClient {
-			slog.Info("superseding stale connection from the same browser", "clientID", c.clientID)
+			slog.Info("superseding stale connection from the same browser", "key", key, "clientID", c.clientID)
 			old.close(protocol.CloseSuperseded, "superseded by a newer connection from the same browser")
 		} else {
-			slog.Info("browser replaced by another device")
+			slog.Info("browser replaced by another device", "key", key)
 			old.sendJSON(protocol.Message{Type: protocol.TypeKicked, Msg: "another device took over"})
 			old.close(protocol.CloseKicked, "replaced by a newer connection")
-			s.relay.markKicked(old.clientID)
+			s.relay.markKicked(key, old.clientID)
 		}
 	}
 	slog.Info("browser connected",
+		"key", key,
 		"ip", s.auth.clientIP(r),
 		"client", describeClient(r),
 		"replaced", old != nil,
@@ -241,12 +308,14 @@ func (s *server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 
 	// 换人时先给 agent 发 browser_offline 再发 online：让 agent 把 web 租约
 	// 还给桌面。旧浏览器可能正握着控制权，不还的话终端会卡在没人能输入的状态。
-	s.relay.notifyAgentBrowserChange(old != nil)
-	s.relay.greetBrowser(c)
+	s.relay.notifyAgentBrowserChange(key, old != nil)
+	s.relay.greetBrowser(key, c)
 
-	c.readLoop(s.relay.onBrowserFrame)
-	s.relay.clearBrowser(c)
-	slog.Info("browser disconnected")
+	c.readLoop(func(typ websocket.MessageType, data []byte) bool {
+		return s.relay.onBrowserFrame(key, typ, data)
+	})
+	s.relay.clearBrowser(key, c)
+	slog.Info("browser disconnected", "key", key)
 }
 
 // Go 的 mime 表里没有 .webmanifest（实测 go1.25.8，TypeByExtension 返回空串），

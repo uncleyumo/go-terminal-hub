@@ -170,7 +170,7 @@ func setup(t *testing.T, h *hub.Hub, cfg Config) *peer {
 
 	cfg.Enabled = true
 	cfg.URL = "ws" + strings.TrimPrefix(srv.URL, "http")
-	cfg.Token = "irrelevant-in-this-test"
+	cfg.Key = "irrelevant-in-this-test"
 	agent.Apply(cfg)
 
 	select {

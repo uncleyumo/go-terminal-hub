@@ -44,23 +44,23 @@ func NormalizeURL(raw string) (string, error) {
 
 // Probe 拨一次 relay 看能不能连上，连上就立刻正常关闭。
 //
-// 拨得动 = 地址通 + 令牌对。relay 是**先校验令牌再升级连接**的
+// 拨得动 = 地址通 + key 对。relay 是**先校验 key 再升级连接**的
 // （remote/relay/main.go 里鉴权在 websocket.Accept 之前），
-// 令牌不对会直接回 401，Dial 当场报错。
-func Probe(ctx context.Context, rawURL, token string) error {
+// key 不对会直接回 401，Dial 当场报错。
+func Probe(ctx context.Context, rawURL, key string) error {
 	target, err := NormalizeURL(rawURL)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(token) == "" {
-		return errors.New("令牌是空的")
+	if strings.TrimSpace(key) == "" {
+		return errors.New("使用 key 是空的")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancel()
 
 	ws, _, err := websocket.Dial(ctx, target, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}},
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + key}},
 	})
 	if err != nil {
 		return err

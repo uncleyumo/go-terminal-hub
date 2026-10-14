@@ -33,8 +33,11 @@ type DataStore struct {
 // 不是本机要监听的地址。家里这台机器因此不需要公网 IP、不用端口映射。
 type RemoteSettings struct {
 	Enabled bool   `json:"enabled"`
-	URL     string `json:"url"`   // 形如 wss://hub.example.com/ws/agent
-	Token   string `json:"token"` // 与浏览器共用的预共享令牌
+	URL     string `json:"url"` // 形如 wss://hub.example.com/ws/agent
+	Key     string `json:"key"` // 中心站签发的使用 key，只在 Authorization 头里出现
+	// Secret 是本机生成的登陆密钥，交给最终用户（手机）登录用。
+	// 连上中心站后会自动登记，所以填不填都能跑，但要在界面上显示出来给人。
+	Secret string `json:"secret"`
 	// AutoTakeover 为真时，手机连上并报出尺寸后立刻拿到控制权，
 	// 不用再点一下「接管」。
 	AutoTakeover bool `json:"autoTakeover"`

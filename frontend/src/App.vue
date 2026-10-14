@@ -83,7 +83,7 @@ const settings = ref<Settings>({
   language: 'en',
   theme: 'light',
   startOnBoot: false,
-  remote: { enabled: false, url: '', token: '', autoTakeover: false },
+  remote: { enabled: false, url: '', key: '', secret: '', autoTakeover: false },
 })
 const locale = ref<AppLocale>('en')
 const themeMode = ref<ThemeMode>('system')
@@ -103,7 +103,8 @@ const remoteSaving = ref(false)
 const remoteConfig = computed<RemoteConfig>(() => ({
   enabled: settings.value.remote?.enabled ?? false,
   url: settings.value.remote?.url ?? '',
-  token: settings.value.remote?.token ?? '',
+  key: settings.value.remote?.key ?? '',
+  secret: settings.value.remote?.secret ?? '',
   autoTakeover: settings.value.remote?.autoTakeover ?? false,
 }))
 

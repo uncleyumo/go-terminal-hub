@@ -65,6 +65,11 @@ type conn struct {
 	// clientID 只在浏览器连接上有值：从 cookie 里取，用来识别踢人循环
 	// （被顶掉的浏览器如果立刻重连，认得出是它）。
 	clientID string
+
+	// key 是这条连接所属的使用 key。两侧都有：agent 的是 Authorization 头里
+	// 那个，浏览器的是 cookie 会话里那个。relay 所有操作都要靠它找到对的那套
+	// 槽位——不带的话就会串到别人的终端上。
+	key string
 }
 
 func newConn(parent context.Context, ws *websocket.Conn, label string) *conn {

@@ -3,6 +3,11 @@
 //
 // 连接方向是反的：本地 hub 主动拨到云端的 relay，所以这里填的是 relay 的地址。
 // 家里这台机器不需要公网 IP、不用端口映射、不用内网穿透。
+//
+// 两层身份，分开填：
+//
+//   使用 key     中心站签发（hubkey 签出来的），粘贴进来。永远不给手机用户。
+//   登陆密钥     本机生成，交给最终用户（手机）登录用。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UButton from './ui/UButton.vue'
@@ -11,7 +16,7 @@ import UInput from './ui/UInput.vue'
 import USwitch from './ui/USwitch.vue'
 import { notify } from './ui/toast'
 import {
-  generateRemoteToken,
+  generateRemoteSecret,
   testRemoteConnection,
   type RemoteProbeResult,
   type RemoteStatus,
@@ -21,7 +26,8 @@ import { Clipboard } from '@wailsio/runtime'
 export interface RemoteConfig {
   enabled: boolean
   url: string
-  token: string
+  key: string
+  secret: string
   autoTakeover: boolean
 }
 
@@ -53,18 +59,18 @@ watch(
   },
 )
 
-// 改了地址或令牌，上一次的测试结果就不算数了——留着会让人以为新填的也通过了
+// 改了地址或 key，上一次的测试结果就不算数了——留着会让人以为新填的也通过了
 watch(
-  () => [draft.value.url, draft.value.token],
+  () => [draft.value.url, draft.value.key],
   () => (probe.value = null),
 )
 
-// 启用时才需要填地址和令牌，没启用的时候这两个字段是灰的
+// 启用时才需要填地址和 key，没启用的时候这些字段是灰的
 const needsConnection = computed(() => draft.value.enabled)
 
 const canSave = computed(() => {
   if (!draft.value.enabled) return true
-  return draft.value.url.trim() !== '' && draft.value.token.trim() !== ''
+  return draft.value.url.trim() !== '' && draft.value.key.trim() !== ''
 })
 
 const statusText = computed(() => {
@@ -90,23 +96,27 @@ const statusTone = computed(() => {
   return 'text-ink-faint'
 })
 
-async function onGenerate() {
+// 生成登陆密钥。已有的就问一句要不要换——换了手机那边当场失效。
+async function onGenerateSecret() {
+  if (draft.value.secret) {
+    if (!confirm(t('remote.secretRotateConfirm'))) return
+  }
   try {
-    draft.value.token = await generateRemoteToken()
+    draft.value.secret = await generateRemoteSecret()
   } catch (error) {
     notify.error(String(error))
   }
 }
 
-// 「测试连接」：拿当前填在框里的地址和令牌真拨一次，不落盘。
+// 「测试连接」：拿当前填在框里的地址和 key 真拨一次，不落盘。
 //
-// 为什么值得有：地址填错、令牌多复制了一个空格、反代没转发 Upgrade 头，
+// 为什么值得有：地址填错、key 多复制了一个空格、反代没转发 Upgrade 头，
 // 这三种错在界面上长得一模一样——都是「连接失败」。真拨一次能当场分清。
 const testing = ref(false)
 const probe = ref<RemoteProbeResult | null>(null)
 
 const canTest = computed(
-  () => draft.value.url.trim() !== '' && draft.value.token.trim() !== '',
+  () => draft.value.url.trim() !== '' && draft.value.key.trim() !== '',
 )
 
 const probeText = computed(() => {
@@ -121,7 +131,7 @@ async function onTest() {
   testing.value = true
   probe.value = null
   try {
-    probe.value = await testRemoteConnection(draft.value.url.trim(), draft.value.token.trim())
+    probe.value = await testRemoteConnection(draft.value.url.trim(), draft.value.key.trim())
   } catch (error) {
     probe.value = { ok: false, already: false, message: String(error) }
   } finally {
@@ -129,18 +139,36 @@ async function onTest() {
   }
 }
 
-async function onCopyToken() {
-  if (!draft.value.token) return
+async function onCopy(text: string, label: string) {
+  if (!text) return
   try {
-    await Clipboard.SetText(draft.value.token)
-    notify.success(t('remote.tokenCopied'))
+    await Clipboard.SetText(text)
+    notify.success(label)
   } catch (error) {
     notify.error(String(error))
   }
 }
 
+// 手机用户要的不是一个裸密钥，是一个能直接点开的链接。
+// key + 密钥都放进 fragment：fragment 不进访问日志、不进 Referer。
+const shareLink = computed(() => {
+  if (!draft.value.url.trim() || !draft.value.secret) return ''
+  try {
+    const u = new URL(draft.value.url.trim().replace(/^ws/, 'http'))
+    const base = `${u.protocol === 'wss:' ? 'https:' : 'http:'}//${u.host}/`
+    return `${base}#key=${encodeURIComponent(draft.value.key.trim())}&secret=${encodeURIComponent(draft.value.secret)}`
+  } catch {
+    return ''
+  }
+})
+
 function onSave() {
-  emit('save', { ...draft.value, url: draft.value.url.trim(), token: draft.value.token.trim() })
+  emit('save', {
+    ...draft.value,
+    url: draft.value.url.trim(),
+    key: draft.value.key.trim(),
+    secret: draft.value.secret.trim(),
+  })
 }
 </script>
 
@@ -174,21 +202,50 @@ function onSave() {
           <div class="mt-1 text-[11px] leading-4 text-ink-faint">{{ t('remote.urlHint') }}</div>
         </div>
 
+        <!-- 使用 key：管理员在服务器上用 hubkey 签出来的，粘贴进来 -->
         <div>
-          <div class="mb-1 text-xs text-ink-faint">{{ t('remote.token') }}</div>
+          <div class="mb-1 text-xs text-ink-faint">{{ t('remote.key') }}</div>
+          <UInput v-model="draft.key" class="flex-1" :placeholder="t('remote.keyPlaceholder')" />
+          <div class="mt-1 text-[11px] leading-4 text-ink-faint">{{ t('remote.keyHint') }}</div>
+        </div>
+
+        <!-- 登陆密钥：本机生成，交给手机用户。不生成也能跑，但手机就登不进来 -->
+        <div>
+          <div class="mb-1 text-xs text-ink-faint">{{ t('remote.secret') }}</div>
           <div class="flex gap-2">
-            <UInput v-model="draft.token" class="flex-1" :placeholder="t('remote.tokenPlaceholder')" />
-            <UButton variant="default" size="sm" @click="onGenerate">
+            <UInput v-model="draft.secret" class="flex-1" :placeholder="t('remote.secretPlaceholder')" />
+            <UButton variant="default" size="sm" @click="onGenerateSecret">
               {{ t('remote.generate') }}
             </UButton>
-            <UButton variant="default" size="sm" :disabled="!draft.token" @click="onCopyToken">
+            <UButton
+              variant="default"
+              size="sm"
+              :disabled="!draft.secret"
+              @click="onCopy(draft.secret, t('remote.secretCopied'))"
+            >
               {{ t('remote.copy') }}
             </UButton>
           </div>
-          <div class="mt-1 text-[11px] leading-4 text-ink-faint">{{ t('remote.tokenHint') }}</div>
+          <div class="mt-1 text-[11px] leading-4 text-ink-faint">{{ t('remote.secretHint') }}</div>
         </div>
 
-        <!-- 真拨一次。地址错、令牌多个空格、反代没转发 Upgrade 头，
+        <!-- 发给手机用户：一个带凭证的链接，点开就进登录页 -->
+        <div v-if="shareLink">
+          <div class="flex gap-2">
+            <UButton
+              variant="default"
+              size="sm"
+              @click="onCopy(shareLink, t('remote.linkCopied'))"
+            >
+              {{ t('remote.copyLink') }}
+            </UButton>
+            <span class="min-w-0 flex-1 truncate text-[11px] text-ink-faint" :title="shareLink">
+              {{ t('remote.linkHint') }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 真拨一次。地址错、key 多个空格、反代没转发 Upgrade 头，
              这三种在界面上都是同一句「连接失败」，不试分不清。 -->
         <div class="flex items-center gap-2">
           <UButton variant="default" size="sm" :disabled="!canTest || testing" @click="onTest">

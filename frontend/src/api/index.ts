@@ -230,10 +230,10 @@ export function getRemoteStatus(): Promise<RemoteStatus> {
   return RemoteService.GetRemoteStatus()
 }
 
-// 32 字节随机再 base64。这个令牌的持有者能把任意按键送进本机终端，
+// 32 字节随机再 base64。这个密钥的持有者能把任意按键送进本机终端，
 // 强度不能靠人自己想。
-export function generateRemoteToken(): Promise<string> {
-  return RemoteService.GenerateToken()
+export function generateRemoteSecret(): Promise<string> {
+  return RemoteService.GenerateSecret()
 }
 
 // 「测试连接」的结果。Message 只有失败时有内容（后端报的错原文）；
@@ -241,13 +241,13 @@ export function generateRemoteToken(): Promise<string> {
 export type RemoteProbeResult = RemoteProbeResultModel
 
 /**
- * 拨一次 relay，看地址和令牌对不对。不落盘、不启用。
+ * 拨一次 relay，看地址和 key 对不对。不落盘、不启用。
  *
  * 已经连着同一个地址时后端不会真拨——relay 上 agent 只有一个位置，
  * 试拨会把正在用的那条顶掉。那种情况直接拿现成的连接状态当结果。
  */
-export function testRemoteConnection(url: string, token: string): Promise<RemoteProbeResult> {
-  return RemoteService.TestConnection(url, token)
+export function testRemoteConnection(url: string, key: string): Promise<RemoteProbeResult> {
+  return RemoteService.TestConnection(url, key)
 }
 
 export function onRemoteStatus(cb: (status: RemoteStatus) => void): () => void {

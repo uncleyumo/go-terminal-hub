@@ -7,7 +7,7 @@ import { HubClient, type ConnectionState, type ControlMessage, type SessionInfo 
 import LoginView from './components/LoginView.vue'
 import SessionList from './components/SessionList.vue'
 import TerminalView from './components/TerminalView.vue'
-import { resetAutoToken } from './token'
+import { resetAutoCredentials } from './token'
 
 type View = 'login' | 'list' | 'terminal'
 
@@ -160,7 +160,7 @@ async function checkStillAuthed() {
 
     client.value?.close()
     // 令牌还是好的，坏的只是 cookie。放行让登录页拿它重新换一次。
-    resetAutoToken()
+    resetAutoCredentials()
     current.value = null
     view.value = 'login'
   } finally {

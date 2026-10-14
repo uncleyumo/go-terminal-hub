@@ -84,10 +84,10 @@ type ProbeResult struct {
 	Message string `json:"message"`
 }
 
-// TestConnection 拨一次 relay，看地址和令牌对不对。不落盘、不启用，就是一次试拨。
-func (x *RemoteService) TestConnection(url, token string) ProbeResult {
+// TestConnection 拨一次 relay，看地址和 key 对不对。不落盘、不启用，就是一次试拨。
+func (x *RemoteService) TestConnection(url, key string) ProbeResult {
 	url = strings.TrimSpace(url)
-	token = strings.TrimSpace(token)
+	key = strings.TrimSpace(key)
 
 	x.mu.Lock()
 	agent := x.agent
@@ -95,7 +95,7 @@ func (x *RemoteService) TestConnection(url, token string) ProbeResult {
 
 	// ⚠️ 已经连着同一个地址时不能再拨：relay 上 agent 只有一个位置，
 	// 新连接会把正在用的那条顶掉（关闭码 4002），本机要退避 60 秒才回来。
-	// 这种情况直接拿现成的状态当结果——连接活着，就说明地址和令牌都对。
+	// 这种情况直接拿现成的状态当结果——连接活着，就说明地址和 key 都对。
 	if agent != nil {
 		cfg, st := agent.Config(), agent.Status()
 		if cfg.Enabled && st.State == remote.StateConnected && sameTarget(cfg.URL, url) {
@@ -103,7 +103,7 @@ func (x *RemoteService) TestConnection(url, token string) ProbeResult {
 		}
 	}
 
-	if err := remote.Probe(context.Background(), url, token); err != nil {
+	if err := remote.Probe(context.Background(), url, key); err != nil {
 		return ProbeResult{Message: err.Error()}
 	}
 	return ProbeResult{OK: true}
@@ -122,11 +122,11 @@ func sameTarget(a, b string) bool {
 	return na == nb
 }
 
-// GenerateToken 生成一个足够强的预共享令牌。
+// GenerateSecret 生成登陆密钥，交给最终用户（手机）登录用。
 //
-// 32 字节随机再 base64——这个令牌的持有者能把任意按键送进本机终端，
+// 32 字节随机再 base64——这个密钥的持有者能把任意按键送进本机终端，
 // 强度不能靠人自己想。
-func (x *RemoteService) GenerateToken() (string, error) {
+func (x *RemoteService) GenerateSecret() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -144,7 +144,8 @@ func (x *RemoteService) loadConfig() remote.Config {
 	return remote.Config{
 		Enabled:      s.Enabled,
 		URL:          s.URL,
-		Token:        s.Token,
+		Key:          s.Key,
+		Secret:       s.Secret,
 		AutoTakeover: s.AutoTakeover,
 	}
 }

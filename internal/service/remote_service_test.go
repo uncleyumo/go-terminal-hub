@@ -81,7 +81,7 @@ func TestServiceStartupConnects(t *testing.T) {
 	setRemoteSettings(t, store.RemoteSettings{
 		Enabled: true,
 		URL:     "ws" + strings.TrimPrefix(srv.URL, "http"),
-		Token:   "test-token-0123456789",
+		Key:   "test-token-0123456789",
 	})
 
 	svc := &RemoteService{}
@@ -110,7 +110,7 @@ func TestServiceStartupDisabled(t *testing.T) {
 
 // 令牌为空时也不该拨：没有令牌的 relay 连接是没意义的。
 func TestServiceStartupWithoutTokenStaysDisabled(t *testing.T) {
-	setRemoteSettings(t, store.RemoteSettings{Enabled: true, URL: "ws://127.0.0.1:1/ws/agent", Token: ""})
+	setRemoteSettings(t, store.RemoteSettings{Enabled: true, URL: "ws://127.0.0.1:1/ws/agent", Key: ""})
 
 	svc := &RemoteService{}
 	if err := svc.ServiceStartup(context.Background(), application.ServiceOptions{}); err != nil {
@@ -142,7 +142,7 @@ func TestReloadPicksUpNewSettings(t *testing.T) {
 	setRemoteSettings(t, store.RemoteSettings{
 		Enabled: true,
 		URL:     "ws" + strings.TrimPrefix(srv.URL, "http"),
-		Token:   "test-token-0123456789",
+		Key:   "test-token-0123456789",
 	})
 	svc.Reload()
 
@@ -155,7 +155,7 @@ func TestReloadDisconnects(t *testing.T) {
 	setRemoteSettings(t, store.RemoteSettings{
 		Enabled: true,
 		URL:     "ws" + strings.TrimPrefix(srv.URL, "http"),
-		Token:   "test-token-0123456789",
+		Key:   "test-token-0123456789",
 	})
 
 	svc := &RemoteService{}
@@ -171,14 +171,14 @@ func TestReloadDisconnects(t *testing.T) {
 }
 
 // 令牌强度不能靠人自己想：这个令牌的持有者能把任意按键送进本机终端。
-func TestGenerateTokenIsStrong(t *testing.T) {
+func TestGenerateSecretIsStrong(t *testing.T) {
 	svc := &RemoteService{}
 
-	a, err := svc.GenerateToken()
+	a, err := svc.GenerateSecret()
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := svc.GenerateToken()
+	b, err := svc.GenerateSecret()
 	if err != nil {
 		t.Fatal(err)
 	}

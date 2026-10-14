@@ -22,13 +22,13 @@ import * as remote$0 from "../remote/models.js";
 import * as $models from "./models.js";
 
 /**
- * GenerateToken 生成一个足够强的预共享令牌。
+ * GenerateSecret 生成登陆密钥，交给最终用户（手机）登录用。
  * 
- * 32 字节随机再 base64——这个令牌的持有者能把任意按键送进本机终端，
+ * 32 字节随机再 base64——这个密钥的持有者能把任意按键送进本机终端，
  * 强度不能靠人自己想。
  */
-export function GenerateToken(): $CancellablePromise<string> {
-    return $Call.ByID(1287110536);
+export function GenerateSecret(): $CancellablePromise<string> {
+    return $Call.ByID(1090961035);
 }
 
 /**
@@ -46,8 +46,8 @@ export function Reload(): $CancellablePromise<void> {
 }
 
 /**
- * TestConnection 拨一次 relay，看地址和令牌对不对。不落盘、不启用，就是一次试拨。
+ * TestConnection 拨一次 relay，看地址和 key 对不对。不落盘、不启用，就是一次试拨。
  */
-export function TestConnection(url: string, token: string): $CancellablePromise<$models.ProbeResult> {
-    return $Call.ByID(3348211248, url, token);
+export function TestConnection(url: string, key: string): $CancellablePromise<$models.ProbeResult> {
+    return $Call.ByID(3348211248, url, key);
 }
