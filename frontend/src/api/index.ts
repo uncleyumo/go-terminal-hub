@@ -26,6 +26,11 @@ export function getBuildInfo(): Promise<BuildInfo> {
   return AppService.GetBuildInfo()
 }
 
+/** 在资源管理器里打开当前 exe 所在目录（并选中它）。 */
+export function openExeDir(): Promise<void> {
+  return AppService.OpenExeDir()
+}
+
 // —— 手机发过来的图片缓存 ——
 //
 // 手机在远程终端里发一张图，hub 会把它落到 ~/.go-terminal-hub/paste 下、

@@ -39,6 +39,17 @@ export function GetStartOnBootStatus(): $CancellablePromise<boolean> {
 }
 
 /**
+ * OpenExeDir 在资源管理器里打开当前 exe 所在目录，并选中这个 exe。
+ * 「关于」弹窗用：用户想知道程序装在哪、或者更新后去翻备份文件。
+ * 
+ * 不能直接用 os.Args[0]：那是启动时传进来的路径，可能带相对路径或用 8.3
+ * 短名；os.Executable() 给的是内核记下的真实路径。
+ */
+export function OpenExeDir(): $CancellablePromise<void> {
+    return $Call.ByID(2992407960);
+}
+
+/**
  * OpenScriptDir 用于打开脚本文件目录
  */
 export function OpenScriptDir(id: string): $CancellablePromise<void> {

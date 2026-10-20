@@ -23,6 +23,9 @@ export default {
     infoAuthor: 'Author',
     infoContact: 'Contact',
     infoWrite: 'Email the author',
+    infoExeDir: 'Program folder',
+    infoOpenExeDir: 'Open folder',
+    infoOpenExeDirFailed: 'Failed to open the folder',
     infoFailed: "Couldn't read the build info (the backend binding is missing)",
     repository: 'Open the GitHub repository',
     // Images sent from the phone land here and never expire on their own

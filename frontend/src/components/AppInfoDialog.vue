@@ -17,6 +17,7 @@ import {
   clearPasteCache,
   getBuildInfo,
   getPasteCacheInfo,
+  openExeDir,
   type BuildInfo,
   type PasteCacheInfo,
 } from '../api'
@@ -116,6 +117,13 @@ function writeEmail() {
     console.warn('open mail client failed:', error)
   })
 }
+
+// 打开 exe 所在目录。更新失败时用户要去找备份文件，先得知道 exe 装在哪。
+function openExeFolder() {
+  openExeDir().catch((error) => {
+    notify.error(`${t('app.infoOpenExeDirFailed')}: ${String(error)}`)
+  })
+}
 </script>
 
 <template>
@@ -167,6 +175,15 @@ function writeEmail() {
               @click="writeEmail"
             />
           </UTooltip>
+        </dd>
+      </div>
+
+      <div class="flex items-center gap-3 border-b border-line py-2">
+        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoExeDir') }}</dt>
+        <dd class="flex min-w-0 flex-1 items-center justify-end">
+          <UButton variant="default" size="sm" icon="folder" @click="openExeFolder">
+            {{ t('app.infoOpenExeDir') }}
+          </UButton>
         </dd>
       </div>
 

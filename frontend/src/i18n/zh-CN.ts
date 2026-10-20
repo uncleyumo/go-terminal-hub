@@ -24,6 +24,9 @@ export default {
     infoAuthor: '开发者',
     infoContact: '联系方式',
     infoWrite: '用邮件联系',
+    infoExeDir: '程序位置',
+    infoOpenExeDir: '打开目录',
+    infoOpenExeDirFailed: '打开目录失败',
     infoFailed: '读不到版本信息（后端没绑上）',
     repository: '打开 GitHub 仓库',
     // 手机在远程终端里发的图片会落在这里，不会自己消失
