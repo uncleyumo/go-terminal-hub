@@ -6,6 +6,7 @@ import SessionForm from './components/SessionForm.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import TermBackgroundDialog from './components/TermBackgroundDialog.vue'
 import AppInfoDialog from './components/AppInfoDialog.vue'
+import UpdateDialog from './components/UpdateDialog.vue'
 import RemoteSettingsDialog, { type RemoteConfig } from './components/RemoteSettingsDialog.vue'
 import UButton from './components/ui/UButton.vue'
 import UConfirmHost from './components/ui/UConfirmHost.vue'
@@ -20,8 +21,12 @@ import { confirm } from './components/ui/confirm'
 import { notify } from './components/ui/toast'
 import { Browser, Clipboard } from '@wailsio/runtime'
 import {
+  checkUpdate,
   deleteSession,
   getSettings,
+  getUpdateState,
+  onTrayAction,
+  onUpdateState,
   listSessions,
   onSessionExited,
   getRemoteStatus,
@@ -46,6 +51,7 @@ import {
   type RemoteStatus,
   type Settings,
   type SessionView,
+  type UpdateState,
 } from './api'
 import {
   applyAppBackground,
@@ -84,6 +90,7 @@ const settings = ref<Settings>({
   theme: 'light',
   startOnBoot: false,
   remote: { enabled: false, url: '', key: '', secret: '', autoTakeover: false },
+  skippedUpdateVersion: '',
 })
 const locale = ref<AppLocale>('en')
 const themeMode = ref<ThemeMode>('system')
@@ -94,6 +101,22 @@ const refreshing = ref(false)
 const colorDialogOpen = ref(false)
 const appColorOpen = ref(false)
 const appInfoOpen = ref(false)
+
+// —— 应用内更新 ——
+//
+// 状态只有这一份，来源是后端那条 `update:state` 事件。弹窗、顶栏圆点、
+// 托盘菜单文字都从它派生 —— 弹窗关着的时候下载照跑，状态不能跟着弹窗走。
+const updateOpen = ref(false)
+const updateState = ref<UpdateState | null>(null)
+
+// 有新版本（或已经下好在等重启）时，顶栏「关于」按钮上点一个小圆点。
+// 被「跳过这个版本」的按没有新版处理（D60）。
+const hasUpdate = computed(() => {
+  const s = updateState.value
+  if (!s) return false
+  if (s.state === 'ready') return true
+  return s.state === 'available' && !s.skipped
+})
 
 // —— 远程接管 ——
 const remoteOpen = ref(false)
@@ -175,6 +198,10 @@ const themeOptions = computed(() => [
 const selected = computed(
   () => sessions.value.find((s) => s.config.id === selectedId.value) ?? null,
 )
+
+// 正在跑的会话。退出前确认、更新前确认都要问「关掉它们行不行」，
+// 数就是这个数。
+const runningSessions = computed(() => sessions.value.filter((s) => s.running))
 
 // 当前选中的会话是不是正被手机控制。是的话终端区上方要挂提示条。
 const selectedByWeb = computed(
@@ -576,6 +603,51 @@ async function openRepository() {
   }
 }
 
+// —— 应用内更新（M7）——
+//
+// 状态从后端来（`update:state`），这里只决定「什么时候去查」和「新版本怎么提醒」。
+// 真正干活的三个动作（下载 / 重启 / 跳过）都在 UpdateDialog 里直接调后端。
+
+function openUpdateDialog() {
+  updateOpen.value = true
+  const phase = updateState.value?.state
+  // 正在下载或等重启时不要再查：那会把进度和结果覆盖掉，
+  // 用户重开一次弹窗就看到「正在检查」。
+  if (!phase || phase === 'idle' || phase === 'latest' || phase === 'error') {
+    void checkUpdate(true).catch(() => {})
+  }
+}
+
+// 启动几秒后静默查一次（D58）。等一会儿是因为启动那一刻正在建窗口、
+// 连 relay，再叠一个网络请求只会让首屏更慢。
+// 失败不打扰：没网、被墙、GitHub 限流都只是日志里的一行。
+function scheduleAutoCheck() {
+  window.setTimeout(async () => {
+    try {
+      const st = await checkUpdate(false)
+      if (st?.state === 'available' && !st.skipped) {
+        notify.info(t('update.newVersionToast', { version: st.version }))
+      }
+    } catch {
+      // 自动检查的失败一律不弹
+    }
+  }, 4000)
+}
+
+// 更新重启前把所有会话停掉。返回没停掉的那些（空数组 = 干净）。
+//
+// 不在这里自己遍历调用 stopSession：后端 StopAllSessions 才拿得到
+// 「谁真的没停下来」的信息，前端那份列表可能已经过时了。
+async function stopAllForUpdate(): Promise<string[]> {
+  try {
+    await stopAllSessions()
+  } catch (error) {
+    return [String(error)]
+  }
+  await load()
+  return []
+}
+
 // —— 快捷键 ——
 // 本版本**不做任何键盘快捷键**（学习者 2026-09-28 定的）。
 // 之前加过 Ctrl+K 聚焦搜索 + Esc 清搜索，现在连监听带提示一起删干净。
@@ -652,12 +724,32 @@ onMounted(async () => {
     onRemoteStatus((status) => {
       remoteStatus.value = status
     }),
+    // 更新状态：后端把 wails:updater:* 那一堆细粒度事件收成了一条，整份推过来。
+    onUpdateState((st) => {
+      updateState.value = st
+    }),
+    // 托盘右键菜单的动作。Go 侧已经把主窗口叫出来了，这里只负责接住：
+    // 检查更新 → 开弹窗；退出 → 走 quit()（有会话先确认）。
+    onTrayAction((action) => {
+      if (action === 'check-update') openUpdateDialog()
+      else if (action === 'quit') void quit()
+    }),
   ]
 
   await loadSettings()
   await load()
   await refreshRemoteStatus()
   await runAutoStart()
+
+  // 先拉一次当前状态，再挂上几秒后的静默检查。
+  // 拉这一步是必要的：ServiceStartup 里推第一条状态时前端可能还没订阅上，
+  // 事件不补发（见 api/index.ts 顶部那条注释）。
+  getUpdateState()
+    .then((st) => {
+      if (st) updateState.value = st
+    })
+    .catch(() => {})
+  scheduleAutoCheck()
 })
 
 onBeforeUnmount(() => {
@@ -808,15 +900,23 @@ onBeforeUnmount(() => {
 
       <!-- 「关于这个 app」跟仓库链接归成一组：两个都是「关于这个程序本身」，
            不是「操作 app」。组内从左到右是「看信息 → 去看源码」 -->
+      <!-- 有新版本时这个按钮左上角点一个小圆点。不做成弹窗是因为
+           D58 定的是「一次性轻提示 + 常驻圆点」，模态框会打断手上在做的事 -->
       <UTooltip :content="t('app.info')">
-        <UButton
-          variant="ghost"
-          size="sm"
-          square
-          icon="info"
-          :aria-label="t('app.info')"
-          @click="appInfoOpen = true"
-        />
+        <div class="relative">
+          <UButton
+            variant="ghost"
+            size="sm"
+            square
+            icon="info"
+            :aria-label="t('app.info')"
+            @click="appInfoOpen = true"
+          />
+          <span
+            v-if="hasUpdate"
+            class="pointer-events-none absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-accent ring-2 ring-surface"
+          />
+        </div>
       </UTooltip>
 
       <!-- 仓库链接排在最右、单独隔一条线：它是「离开这个 app」的动作，
@@ -1086,7 +1186,16 @@ onBeforeUnmount(() => {
         </UButton>
       </template>
     </UDialog>
-    <AppInfoDialog v-model="appInfoOpen" />
+    <AppInfoDialog
+      v-model="appInfoOpen"
+      @check-update="appInfoOpen = false; openUpdateDialog()"
+    />
+    <UpdateDialog
+      v-model="updateOpen"
+      :state="updateState"
+      :running-count="runningSessions.length"
+      :stop-all-sessions="stopAllForUpdate"
+    />
     <RemoteSettingsDialog
       v-model="remoteOpen"
       :config="remoteConfig"

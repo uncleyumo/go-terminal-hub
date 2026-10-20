@@ -23,7 +23,11 @@ import {
 import brandIcon from '../assets/brand/icon.svg'
 
 const props = defineProps<{ modelValue: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  /** 交给 App.vue：关掉这个弹窗、打开更新弹窗（状态和动作都在那边）。 */
+  'check-update': []
+}>()
 
 const { t } = useI18n()
 
@@ -188,6 +192,9 @@ function writeEmail() {
     </p>
 
     <template #footer>
+      <UButton variant="ghost" size="sm" class="mr-auto" @click="emit('check-update')">
+        {{ t('update.checkButton') }}
+      </UButton>
       <UButton variant="default" size="sm" @click="emit('update:modelValue', false)">
         {{ t('action.close') }}
       </UButton>

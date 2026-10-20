@@ -1,6 +1,6 @@
 // 唯一碰 bindings 的地方。组件只 import 这里的函数，不直接 import bindings。
 import { Events } from '@wailsio/runtime'
-import { AppService, HubService, RemoteService, StoreService } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service'
+import { AppService, HubService, RemoteService, ScreenService, StoreService, UpdateService } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service'
 import type { DataStore } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { Settings } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/store/models'
 import type { RecordStatus } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/exec/hub/models'
@@ -12,6 +12,7 @@ import type { Status as RemoteStatusModel } from '../../bindings/github.com/uncl
 import type { BuildInfo } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/buildinfo/models'
 import type { Info as PasteCacheInfoModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/paste/models'
 import type { ProbeResult as RemoteProbeResultModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service/models'
+import type { UpdateState as UpdateStateModel } from '../../bindings/github.com/uncleyumo/go-terminal-hub/internal/service/models'
 
 // 绑定是生成物，形状会跟着生成参数变：
 // Taskfile 里统一带 -i（生成 interface，不是 class），返回值一律可空。
@@ -252,4 +253,85 @@ export function testRemoteConnection(url: string, key: string): Promise<RemotePr
 
 export function onRemoteStatus(cb: (status: RemoteStatus) => void): () => void {
   return Events.On('remote:status', (event) => cb(event.data))
+}
+
+// —— 应用内更新 ——
+//
+// 后端把更新器那十几条 `wails:updater:*` 事件（check-started / download-progress /
+// verifying / update-ready …）收成了一条 `update:state`，每次推**整份**状态。
+// 前端和托盘都只订阅这一条，不用自己拼状态机。
+//
+// 状态取值（后端 internal/service/update_service.go）：
+//   disabled    dev 构建或更新器起不来，不检查
+//   idle        已初始化，还没查过
+//   checking    正在查
+//   latest      已是最新
+//   available   有新版本，可以下载
+//   downloading 下载/校验/装到暂存区（三步合并成一个状态）
+//   ready       下载校验都过了，等重启
+//   error       出错，Error 字段里是给用户看的原文
+export type UpdateState = UpdateStateModel
+
+export function getUpdateState(): Promise<UpdateState> {
+  return UpdateService.GetState()
+}
+
+/** manual 只影响后端日志：自动检查失败不打扰用户（D58）。 */
+export function checkUpdate(manual: boolean): Promise<UpdateState> {
+  return UpdateService.Check(manual)
+}
+
+/** 下载 + 校验 + 装到暂存区。**不替换**，替换在 restartForUpdate 里。 */
+export function installUpdate(): Promise<UpdateState> {
+  return UpdateService.Install()
+}
+
+export function cancelUpdateDownload(): Promise<void> {
+  return UpdateService.CancelDownload()
+}
+
+/**
+ * 起 helper、退出当前进程、换 exe、再启动新版。
+ *
+ * 调用之前必须把会话停干净（D60）：这个方法返回之后，进程就不受控了。
+ */
+export function restartForUpdate(): Promise<void> {
+  return UpdateService.Restart()
+}
+
+export function skipUpdateVersion(version: string): Promise<void> {
+  return UpdateService.SkipVersion(version)
+}
+
+export function openReleasesPage(): Promise<void> {
+  return UpdateService.OpenReleasesPage()
+}
+
+export function onUpdateState(cb: (state: UpdateState) => void): () => void {
+  return Events.On('update:state', (event) => cb(event.data))
+}
+
+// 托盘右键菜单要主窗口做的事。Go 侧已经先把窗口叫出来了，
+// 这里只负责把动作接进前端现有的弹窗和确认流程。
+//   check-update —— 打开更新弹窗并查一次
+//   quit         —— 走 App.vue 里那个 quit()（有会话先确认）
+export function onTrayAction(cb: (action: string) => void): () => void {
+  return Events.On('tray:action', (event) => cb(event.data))
+}
+
+// —— 屏幕取色 ——
+//
+// 浏览器的 `EyeDropper` API 在 WebView2 里是「接口在、功能废」：
+// `window.EyeDropper` 是 defined 的，但 `.open()` 毫秒级抛 AbortError——
+// 取色镜那一层 UI 必须由宿主程序提供，WebView2 没实现。
+// 所以这条路改由 Go 截屏 + 前端读像素，见 internal/service/screen_service.go。
+
+/** 抓一张屏幕图（data URL），同时把主窗口铺满屏幕并置顶。 */
+export function beginScreenPick(): Promise<string> {
+  return ScreenService.BeginScreenPick()
+}
+
+/** 还原窗口。**必须调**——忘了调，用户会被留在一个全屏置顶的窗口里。 */
+export function endScreenPick(): Promise<void> {
+  return ScreenService.EndScreenPick()
 }

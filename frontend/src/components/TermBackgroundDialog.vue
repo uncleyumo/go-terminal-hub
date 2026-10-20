@@ -10,9 +10,12 @@
 // 所以内部只存一份 HSV，RGB 和 hex 每次由它算出来，反过来从 RGB / hex 进来就转成 HSV。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ScreenPickOverlay from './ScreenPickOverlay.vue'
 import UButton from './ui/UButton.vue'
 import UDialog from './ui/UDialog.vue'
 import UIcon from './ui/UIcon.vue'
+import { notify } from './ui/toast'
+import { beginScreenPick, endScreenPick } from '../api'
 import {
   hexToRgb,
   hsvToRgb,
@@ -130,8 +133,12 @@ function pickFromHue(e: PointerEvent) {
   const el = hue.value
   if (!el) return
   const r = el.getBoundingClientRect()
-  const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-  setFromHsv({ h: x * 360, s: hsv.value.s, v: hsv.value.v })
+  // 色相条是**竖**的（上面渐变 `to bottom`，指示器写的是 `top`），所以量的是纵向：
+  // 从上往下 0° → 360°。
+  // 这里原先量的是 `clientX / r.width` —— 那是给横条用的公式，套在一条 24px 宽的竖条上，
+  // 鼠标横向挪 24px 就把整个色环扫完（看着像乱飘），纵向怎么拖都不动（看着像不跟手）。
+  const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
+  setFromHsv({ h: y * 360, s: hsv.value.s, v: hsv.value.v })
 }
 
 function onHueDown(e: PointerEvent) {
@@ -167,10 +174,42 @@ function commitHexDraft(raw: string) {
   if (value) setFromHex(value)
 }
 
-// 系统取色器。Chromium 的 `<input type="color">` 自带吸管，
-// 不用自己实现「读屏幕像素」那套 —— 那个在 WebView 里既麻烦又不准。
-function onNativePick(e: Event) {
-  setFromHex((e.target as HTMLInputElement).value)
+// —— 屏幕取色 ——
+//
+// 原来这里是一个 `<input type="color">`，靠 Chromium 自带的取色镜。但那个镜面
+// 只有**浏览器** Edge/Chrome 有，WebView2 没实现宿主那一半；标准 API
+// `EyeDropper` 在 WebView2 里同样是「构造函数在、`.open()` 毫秒级抛 AbortError」。
+// 两条都不通，所以自己来：
+//   1. Go 侧截一张屏，返回 data URL，同时把主窗口铺满屏幕、置顶；
+//   2. 前端把这张图铺满窗口（看起来就是屏幕）；
+//   3. 用户点哪儿，从图里读那个像素。
+const picking = ref(false)
+const pickImage = ref<string | null>(null)
+
+async function startPick() {
+  try {
+    pickImage.value = await beginScreenPick()
+    picking.value = true
+  } catch (error) {
+    notify.error(`${t('color.pickFailed')}: ${String(error)}`)
+  }
+}
+
+// 不管取没取到颜色，结束都要还原窗口。不还原，用户就被留在一个
+// 全屏置顶的窗口里，只能关掉它。
+async function finishPick() {
+  picking.value = false
+  pickImage.value = null
+  try {
+    await endScreenPick()
+  } catch (error) {
+    console.warn('end screen pick failed:', error)
+  }
+}
+
+function onPicked(hex: string) {
+  setFromHex(hex)
+  void finishPick()
 }
 
 function reset() {
@@ -238,24 +277,17 @@ const PRESETS: string[][] = [
           />
         </div>
 
-        <label class="relative mt-1 block h-9 w-full cursor-pointer overflow-hidden rounded-lg border border-line-strong">
-          <span class="absolute inset-0" :style="{ background: hex }" />
-          <span
-            class="absolute inset-0 flex items-center justify-center gap-1.5 text-[11px] font-medium"
-            :class="prefersDarkText(hex) ? 'text-black/70' : 'text-white/85'"
-          >
-            <UIcon name="pipette" :size="13" />
-            {{ t('color.pick') }}
-          </span>
-          <!-- 原生的 color input 自己就带吸管。盖在上面的那一层是透明的，
-               看着是我们画的色块，点下去调出来的是系统那套。 -->
-          <input
-            type="color"
-            class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            :value="hex"
-            @input="onNativePick"
-          />
-        </label>
+        <!-- 取色按钮。色块本身还是当前颜色，点下去进全屏取色层。 -->
+        <button
+          type="button"
+          class="mt-1 flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-lg border border-line-strong text-[11px] font-medium transition-opacity hover:opacity-90"
+          :class="prefersDarkText(hex) ? 'text-black/70' : 'text-white/85'"
+          :style="{ background: hex }"
+          @click="startPick"
+        >
+          <UIcon name="pipette" :size="13" />
+          {{ t('color.pick') }}
+        </button>
       </div>
     </div>
 
@@ -320,4 +352,12 @@ const PRESETS: string[][] = [
       <UButton variant="primary" size="sm" @click="confirm">{{ t('color.apply') }}</UButton>
     </template>
   </UDialog>
+
+  <!-- 全屏取色层。它自己 Teleport 到 body，并且故意盖在弹窗之上 -->
+  <ScreenPickOverlay
+    v-if="picking && pickImage"
+    :image="pickImage"
+    @pick="onPicked"
+    @cancel="finishPick"
+  />
 </template>

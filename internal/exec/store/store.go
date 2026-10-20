@@ -48,6 +48,10 @@ type Settings struct {
 	Theme       string         `json:"theme"`
 	StartOnBoot bool           `json:"startOnBoot"`
 	Remote      RemoteSettings `json:"remote"`
+	// SkippedUpdateVersion 是用户在更新弹窗里点过「跳过这个版本」的那个版本号。
+	// Wails 更新器自己也有个 SkipVersion，但只记在内存里，重启就忘；
+	// 跨重启要靠这里存一份。空字符串 = 没跳过任何版本。
+	SkippedUpdateVersion string `json:"skippedUpdateVersion"`
 }
 
 const (

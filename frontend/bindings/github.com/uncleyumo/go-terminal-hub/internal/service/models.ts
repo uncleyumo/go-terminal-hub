@@ -11,3 +11,38 @@ export interface ProbeResult {
     "already": boolean;
     "message": string;
 }
+
+/**
+ * UpdateState 是推给前端和托盘的那一份状态快照。
+ * 
+ * 每次变化推的是**整份**，不是增量：前端只维护一个对象，不用自己拼。
+ */
+export interface UpdateState {
+    "state": string;
+    "currentVersion": string;
+
+    /**
+     * Version / Notes / Size 只在 State 是 available / downloading / ready 时有意义。
+     */
+    "version": string;
+    "notes": string;
+    "size": number;
+
+    /**
+     * 下载进度。Written / Total 是字节，Rate 是更新器算好的每秒字节数（近 1 秒平滑值）。
+     */
+    "written": number;
+    "total": number;
+    "rate": number;
+
+    /**
+     * Error 是给用户看的一句话，直接用底层报错原文——里面是 HTTP 状态码、
+     * 校验不匹配这类具体信息，比「更新失败」有用。
+     */
+    "error": string;
+
+    /**
+     * Skipped 为真表示这个版本用户点过「跳过这个版本」。
+     */
+    "skipped": boolean;
+}

@@ -4,14 +4,19 @@
 import * as AppService from "./appservice.js";
 import * as HubService from "./hubservice.js";
 import * as RemoteService from "./remoteservice.js";
+import * as ScreenService from "./screenservice.js";
 import * as StoreService from "./storeservice.js";
+import * as UpdateService from "./updateservice.js";
 export {
     AppService,
     HubService,
     RemoteService,
-    StoreService
+    ScreenService,
+    StoreService,
+    UpdateService
 };
 
 export type {
-    ProbeResult
+    ProbeResult,
+    UpdateState
 } from "./models.js";

@@ -70,6 +70,11 @@ tasks:
       - cmd: powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path dist | Out-Null"
       - task: build
       - cmd: powershell -NoProfile -Command "Copy-Item '{{.BIN_DIR}}/{{.APP_NAME}}.exe' 'dist/{{.DIST_NAME}}.exe' -Force"
+      # 应用内更新按 SHA256SUMS 校验（ARCHITECTURE §12.4）。这个文件必须和 exe
+      # 一起传到 Release：更新器只在它存在、且里面有目标 exe 那一行时才算「校验过」，
+      # 少一样后端就拒绝更新。
+      # 格式是 sha256sum 那套：<hex>  <文件名>，文件名必须是资产全名。
+      - cmd: powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 'dist/{{.DIST_NAME}}.exe').Hash.ToLower() + '  {{.DIST_NAME}}.exe' | Set-Content -Path 'dist/SHA256SUMS' -Encoding ascii"
 
   run:
     summary: Runs the application

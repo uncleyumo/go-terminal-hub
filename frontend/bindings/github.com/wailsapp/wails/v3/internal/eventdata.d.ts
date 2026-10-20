@@ -11,6 +11,9 @@ import type * as sink$0 from "../../../../uncleyumo/go-terminal-hub/internal/exe
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import type * as remote$0 from "../../../../uncleyumo/go-terminal-hub/internal/remote/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as service$0 from "../../../../uncleyumo/go-terminal-hub/internal/service/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
@@ -22,6 +25,8 @@ declare module "@wailsio/runtime" {
             "session:size": sink$0.SizePayload;
             "session:started": string;
             "time": string;
+            "tray:action": string;
+            "update:state": service$0.UpdateState;
         }
     }
 }

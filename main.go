@@ -38,6 +38,11 @@ func init() {
 	application.RegisterEvent[sink.LeasePayload]("session:lease")
 	application.RegisterEvent[sink.SizePayload]("session:size")
 	application.RegisterEvent[remote.Status]("remote:status")
+	// 更新状态：UpdateService 把 wails:updater:* 那十几条细粒度事件
+	// 收成这一条，前端和托盘都只订阅它。
+	application.RegisterEvent[service.UpdateState]("update:state")
+	// 托盘菜单要主窗口做的事（打开更新弹窗 / 走退出确认）。
+	application.RegisterEvent[string]("tray:action")
 }
 
 // main function serves as the application's entry point. It initializes the application, creates a window,
@@ -59,6 +64,8 @@ func main() {
 	// 让两个 service 互相 import，免得出现 import 环。
 	remoteService := &service.RemoteService{}
 	storeService := &service.StoreService{OnSettingsSaved: remoteService.Reload}
+	updateService := &service.UpdateService{}
+	screenService := &service.ScreenService{}
 
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
@@ -73,6 +80,8 @@ func main() {
 			application.NewService(&service.HubService{}),
 			application.NewService(&service.AppService{}),
 			application.NewService(remoteService),
+			application.NewService(updateService),
+			application.NewService(screenService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -111,6 +120,19 @@ func main() {
 		URL:              "/",
 	})
 
+	// 取色要铺满 / 还原主窗口，但窗口是这里才建出来的（Services 是 New 的参数），
+	// 所以建完回填进去。
+	screenService.Window = window
+
+	// 托盘上的动作都先把窗口叫出来再干活：窗口平时是藏着的
+	// （关闭即隐藏），不叫出来用户看不到任何反馈。
+	showWindow := func() {
+		if !window.IsVisible() {
+			window.Show()
+		}
+		window.Focus()
+	}
+
 	tray := app.SystemTray.New()
 	tray.SetTooltip("go-terminal-hub")
 	tray.OnClick(func() {
@@ -121,6 +143,19 @@ func main() {
 			window.Focus()
 		}
 	})
+
+	// 右键菜单：三行状态 + 三个动作。设了菜单之后左键还是走上面的 OnClick，
+	// 只有右键弹菜单，两者不冲突。
+	trayStatus := newTrayMenu(app, tray, remoteService, showWindow)
+
+	// 更新状态一变就刷菜单（有新版时「检查更新」那行会变成「新版本 vX 可用」）。
+	updateService.OnStateChange = trayStatus.refresh
+	// 会话数和 relay 状态不经过更新器，各自订阅各自的。
+	for _, name := range []string{"session:started", "session:exited", "remote:status"} {
+		app.Event.On(name, func(*application.CustomEvent) {
+			trayStatus.refresh(updateService.GetState())
+		})
+	}
 
 	window.RegisterHook(
 		events.Common.WindowClosing,
