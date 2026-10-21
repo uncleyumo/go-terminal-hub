@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,7 +163,7 @@ func (a *AppService) OpenExeDir() error {
 	return nil
 }
 
-// GetPasteCacheInfo 给「关于」弹窗显示手机发来的图片占了多少地方。
+// GetPasteCacheInfo 给「关于」弹窗显示手机或桌面剪贴板发来的图片占了多少地方。
 func (a *AppService) GetPasteCacheInfo() paste.Info {
 	info, err := paste.Stat()
 	if err != nil {
@@ -175,4 +176,17 @@ func (a *AppService) GetPasteCacheInfo() paste.Info {
 // ClearPasteCache 清掉图片缓存，返回清掉了多少。
 func (a *AppService) ClearPasteCache() (paste.Info, error) {
 	return paste.Clear()
+}
+
+// SaveClipboardImage 存一张从桌面剪贴板粘进来的图片，返回落盘路径。
+//
+// 和手机发图共用 internal/paste 那套目录、格式白名单和 8MB 上限，
+// 「关于」里的缓存统计与清理也就能一起管到。
+// 参数收 base64 而不是 []byte：Wails 的调用参数走 JSON，二进制要先编码。
+func (a *AppService) SaveClipboardImage(base64Data string) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return "", errors.Errorf("decode clipboard image: %v", err)
+	}
+	return paste.Save(raw)
 }

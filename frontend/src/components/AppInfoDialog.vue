@@ -53,8 +53,8 @@ function formatBuildTime(raw: string): string {
   return `${m[1]} ${m[2]}${zone}`
 }
 
-// 图片缓存：手机在远程终端里发的图会落到 ~/.go-terminal-hub/paste 下，
-// 不会自己过期，所以给一个清空入口。空的时候按钮是灰的。
+// 图片缓存：手机在远程终端里发的图、桌面 Ctrl+V 粘进来的图，
+// 都会落到 ~/.go-terminal-hub/paste 下，不会自己过期，所以给一个清空入口。空的时候按钮是灰的。
 const cache = ref<PasteCacheInfo | null>(null)
 const clearing = ref(false)
 
@@ -130,76 +130,85 @@ function openExeFolder() {
   <UDialog
     :model-value="modelValue"
     :title="t('app.infoTitle')"
-    width="420px"
+    width="440px"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div class="flex flex-col items-center gap-3 pt-1 pb-1 text-center">
-      <img :src="brandIcon" alt="" width="72" height="72" class="h-[72px] w-[72px]" />
-      <div>
-        <div class="text-[15px] font-semibold text-ink">go-terminal-hub</div>
-        <div class="mt-0.5 text-[12px] text-ink-faint">{{ t('app.infoTagline') }}</div>
+    <!-- 头部：图标、名称和一句话定位。版本号做成名字后面的徽标，
+         不再单独占一行 —— 版本是「这个 app 是谁」的一部分，不是一条属性。 -->
+    <div class="flex items-center gap-3.5">
+      <img :src="brandIcon" alt="" class="h-14 w-14 flex-none" />
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-[15px] font-semibold text-ink">go-terminal-hub</span>
+          <span
+            v-if="info?.version"
+            class="rounded-full border border-line bg-raised px-2 py-px font-mono text-[10px] leading-4 text-ink-dim"
+          >
+            v{{ info.version }}
+          </span>
+        </div>
+        <p class="mt-1 text-[12px] leading-relaxed text-ink-faint">
+          {{ t('app.infoTagline') }}
+        </p>
       </div>
     </div>
 
-    <dl class="mt-4 border-t border-line">
-      <div class="flex items-baseline gap-3 border-b border-line py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoVersion') }}</dt>
-        <dd class="min-w-0 flex-1 font-mono text-[12px] text-ink">{{ info?.version || '—' }}</dd>
-      </div>
-
-      <div class="flex items-baseline gap-3 border-b border-line py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoBuildTime') }}</dt>
-        <dd class="min-w-0 flex-1 font-mono text-[12px] text-ink">
+    <!-- 属性区：每行三格（标签 / 值 / 动作），行高固定 44px。
+         行高固定是为了不管右边有没有按钮，横向分隔线都等距；
+         动作列一律靠右，几个按钮才会落在同一条竖线上。 -->
+    <dl
+      data-selectable
+      class="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-sunken/40"
+    >
+      <div class="flex h-11 items-center gap-3 px-3.5">
+        <dt class="w-[92px] flex-none whitespace-nowrap text-[12px] text-ink-faint">
+          {{ t('app.infoBuildTime') }}
+        </dt>
+        <dd class="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">
           {{ info ? formatBuildTime(info.buildTime) : '—' }}
         </dd>
       </div>
 
-      <div class="flex items-baseline gap-3 border-b border-line py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoAuthor') }}</dt>
-        <dd class="min-w-0 flex-1 text-[12px] text-ink">{{ AUTHOR }}</dd>
+      <div class="flex h-11 items-center gap-3 px-3.5">
+        <dt class="w-[92px] flex-none whitespace-nowrap text-[12px] text-ink-faint">{{ t('app.infoAuthor') }}</dt>
+        <dd class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ AUTHOR }}</dd>
       </div>
 
-      <div class="flex items-baseline gap-3 py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoContact') }}</dt>
-        <dd class="flex min-w-0 flex-1 items-center gap-1">
-          <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">{{
-            CONTACT_EMAIL
-          }}</span>
-          <UTooltip :content="t('app.infoWrite')">
-            <UButton
-              variant="ghost"
-              size="sm"
-              square
-              icon="edit"
-              :aria-label="t('app.infoWrite')"
-              @click="writeEmail"
-            />
-          </UTooltip>
-        </dd>
-      </div>
-
-      <div class="flex items-center gap-3 border-b border-line py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoExeDir') }}</dt>
-        <dd class="flex min-w-0 flex-1 items-center justify-end">
-          <UButton variant="default" size="sm" icon="folder" @click="openExeFolder">
-            {{ t('app.infoOpenExeDir') }}
-          </UButton>
-        </dd>
-      </div>
-
-      <div class="flex items-center gap-3 py-2">
-        <dt class="w-24 flex-none text-[12px] text-ink-faint">{{ t('app.infoCache') }}</dt>
-        <dd class="flex min-w-0 flex-1 items-center gap-1">
-          <span class="min-w-0 flex-1 font-mono text-[12px] text-ink">{{ cacheText }}</span>
+      <div class="flex h-11 items-center gap-3 px-3.5">
+        <dt class="w-[92px] flex-none whitespace-nowrap text-[12px] text-ink-faint">{{ t('app.infoContact') }}</dt>
+        <dd class="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">{{ CONTACT_EMAIL }}</dd>
+        <UTooltip :content="t('app.infoWrite')">
           <UButton
-            variant="default"
+            variant="ghost"
             size="sm"
-            :disabled="!cache?.files || clearing"
-            @click="clearCache"
-          >
-            {{ t('app.infoCacheClear') }}
-          </UButton>
-        </dd>
+            square
+            icon="edit"
+            :aria-label="t('app.infoWrite')"
+            @click="writeEmail"
+          />
+        </UTooltip>
+      </div>
+
+      <div class="flex h-11 items-center gap-3 px-3.5">
+        <dt class="w-[92px] flex-none whitespace-nowrap text-[12px] text-ink-faint">{{ t('app.infoExeDir') }}</dt>
+        <dd class="min-w-0 flex-1" />
+        <UButton variant="ghost" size="sm" icon="folder" @click="openExeFolder">
+          {{ t('app.infoOpenExeDir') }}
+        </UButton>
+      </div>
+
+      <div class="flex h-11 items-center gap-3 px-3.5">
+        <dt class="w-[92px] flex-none whitespace-nowrap text-[12px] text-ink-faint">{{ t('app.infoCache') }}</dt>
+        <dd class="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">{{ cacheText }}</dd>
+        <UButton
+          variant="ghost"
+          size="sm"
+          icon="trash"
+          :disabled="!cache?.files || clearing"
+          @click="clearCache"
+        >
+          {{ t('app.infoCacheClear') }}
+        </UButton>
       </div>
     </dl>
 
@@ -209,7 +218,13 @@ function openExeFolder() {
     </p>
 
     <template #footer>
-      <UButton variant="ghost" size="sm" class="mr-auto" @click="emit('check-update')">
+      <UButton
+        variant="ghost"
+        size="sm"
+        icon="refresh"
+        class="mr-auto"
+        @click="emit('check-update')"
+      >
         {{ t('update.checkButton') }}
       </UButton>
       <UButton variant="default" size="sm" @click="emit('update:modelValue', false)">

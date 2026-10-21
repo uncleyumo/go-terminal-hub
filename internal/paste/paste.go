@@ -1,4 +1,4 @@
-// Package paste 存手机发过来的图片。
+// Package paste 存手机和桌面剪贴板发过来的图片。
 //
 // 为什么是「落盘 + 回一个路径」而不是直接把图片塞进终端：
 // claude code 认图片的其中一条路，就是输入里出现一个以 .png/.jpg/.jpeg/.gif/.webp

@@ -28,7 +28,7 @@ export function GetBuildInfo(): $CancellablePromise<buildinfo$0.BuildInfo> {
 }
 
 /**
- * GetPasteCacheInfo 给「关于」弹窗显示手机发来的图片占了多少地方。
+ * GetPasteCacheInfo 给「关于」弹窗显示手机或桌面剪贴板发来的图片占了多少地方。
  */
 export function GetPasteCacheInfo(): $CancellablePromise<paste$0.Info> {
     return $Call.ByID(1887585030);
@@ -79,6 +79,17 @@ export function ResolveSpecCommandLine(id: string): $CancellablePromise<string> 
  */
 export function ResolveWorkDir(id: string): $CancellablePromise<string> {
     return $Call.ByID(3897877379, id);
+}
+
+/**
+ * SaveClipboardImage 存一张从桌面剪贴板粘进来的图片，返回落盘路径。
+ * 
+ * 和手机发图共用 internal/paste 那套目录、格式白名单和 8MB 上限，
+ * 「关于」里的缓存统计与清理也就能一起管到。
+ * 参数收 base64 而不是 []byte：Wails 的调用参数走 JSON，二进制要先编码。
+ */
+export function SaveClipboardImage(base64Data: string): $CancellablePromise<string> {
+    return $Call.ByID(3893257129, base64Data);
 }
 
 export function SetStartOnBoot(enabled: boolean): $CancellablePromise<void> {

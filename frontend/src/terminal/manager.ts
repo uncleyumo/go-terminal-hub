@@ -5,7 +5,9 @@
 // 容器只是个可插拔的壳，换回来还能看到原来的内容。
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { resizeSession, writeSession } from '../api'
+import { resizeSession, saveClipboardImage, writeSession } from '../api'
+import { notify } from '../components/ui/toast'
+import { i18n } from '../i18n'
 import { getAppBackground, getBackground, prefersDarkText, withBackground } from './background'
 
 interface Entry {
@@ -43,6 +45,8 @@ const entries = new Map<string, Entry>()
 const DEFAULT_FONT_SIZE = 13
 const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
+/** 后端 paste.MaxBytes 的同值副本：先在前端挡一下，省得把大图编成 base64 再送。 */
+const MAX_CLIPBOARD_IMAGE_BYTES = 8 * 1024 * 1024
 
 /*
  * 终端配色**分主题**，但两个主题下都是深底 —— 读进程输出要的是输出自身的颜色
@@ -142,6 +146,20 @@ export function applyAppBackground() {
   }
 }
 
+// 把剪贴板里的图片读成 base64。readAsDataURL 给的是
+// `data:image/png;base64,xxxx`，后端只要逗号后面那段。
+function readImageBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('read clipboard image failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
 function ensure(id: string): Entry {
   let entry = entries.get(id)
   if (!entry) {
@@ -184,6 +202,10 @@ function ensure(id: string): Entry {
       if (!event.ctrlKey || event.shiftKey || event.altKey) return true
       // 用 code 而不是 key：code 是物理键位，不受输入法布局影响
       if (event.code === 'KeyV') return false
+      // Ctrl+C：有选中就复制，没选中才把 0x03 发给进程。
+      // 和 Windows Terminal 的默认语义一致；也避免选中文字后误按 Ctrl+C
+      // 把正在跑的程序打断。复制走浏览器的 copy 事件，由 xterm 自己写剪贴板。
+      if (event.code === 'KeyC') return !term.hasSelection()
       // 字号快捷键。这三个键在终端里没有别的含义，拿来当缩放正好。
       // 必须 preventDefault：WebView2 自己会拿它们去缩放**整个界面**，
       // 那会让菜单、侧栏一起变大，不是我们想要的。
@@ -199,6 +221,43 @@ function ensure(id: string): Entry {
       }
       return true
     })
+    // 图片粘贴：Ctrl+V 走的是浏览器原生 paste 事件，落在 xterm 的隐藏 textarea 上，
+    // 而 xterm 只从剪贴板里取**文本**。图片没有文本，所以粘不进去。
+    // 在捕获阶段先看一眼：剪贴板里是图片就自己接住，存成文件、把路径打进终端。
+    // 有文字时直接放行，仍由 xterm 粘文本。
+    container.addEventListener(
+      'paste',
+      (event) => {
+        const data = event.clipboardData
+        if (!data) return
+        if (data.getData('text/plain')) return
+        const item = Array.from(data.items).find(
+          (i) => i.kind === 'file' && i.type.startsWith('image/'),
+        )
+        const file =
+          item?.getAsFile() ?? Array.from(data.files).find((f) => f.type.startsWith('image/'))
+        if (!file) return
+
+        // 拦下就别再让 xterm 粘一份空的
+        event.preventDefault()
+        event.stopPropagation()
+
+        // 手机远程接管时本端是旁观者，不往 PTY 里写
+        if (entries.get(id)?.viewer) return
+        // 后端上限 8MB；先在这里挡一下，省得把几十 MB 数据编成 base64 再送过去
+        if (file.size > MAX_CLIPBOARD_IMAGE_BYTES) {
+          notify.error(`${i18n.global.t('msg.clipboardImageFailed')}: > 8 MB`)
+          return
+        }
+        void readImageBase64(file)
+          .then((base64) => saveClipboardImage(base64))
+          .then((path) => term.paste(path + ' '))
+          .catch((error) => {
+            notify.error(`${i18n.global.t('msg.clipboardImageFailed')}: ${String(error)}`)
+          })
+      },
+      { capture: true },
+    )
     const observer = new ResizeObserver(() => scheduleFit(id))
     entry = {
       term,

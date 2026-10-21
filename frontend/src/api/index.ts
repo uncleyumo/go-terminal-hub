@@ -33,7 +33,7 @@ export function openExeDir(): Promise<void> {
 
 // —— 手机发过来的图片缓存 ——
 //
-// 手机在远程终端里发一张图，hub 会把它落到 ~/.go-terminal-hub/paste 下、
+// 手机在远程终端里发的图、桌面 Ctrl+V 粘进来的图，都会落到 ~/.go-terminal-hub/paste 下、
 // 再把路径打进终端（claude code 是按路径认图片的）。文件不会自己消失，
 // 所以在「关于」里给一个清空入口。
 
@@ -46,6 +46,11 @@ export function getPasteCacheInfo(): Promise<PasteCacheInfo> {
 /** 返回的是清掉的那部分，调用方拿它拼「清了多少」的提示。 */
 export function clearPasteCache(): Promise<PasteCacheInfo> {
   return AppService.ClearPasteCache()
+}
+
+/** 桌面剪贴板里的图片交给后端落盘，返回路径。和手机发图共用一个缓存目录。 */
+export function saveClipboardImage(base64: string): Promise<string> {
+  return AppService.SaveClipboardImage(base64)
 }
 
 // 一行会话 = 配置（store，跨重启活着）+ 运行状态（hub，只在内存）。
