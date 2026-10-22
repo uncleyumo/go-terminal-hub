@@ -2,6 +2,7 @@ package session
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/uncleyumo/go-terminal-hub/internal/exec/executor"
@@ -20,10 +21,25 @@ type Session struct {
 	doneCh      chan struct{}
 	exitResult  executor.ExitResult
 	drainExitCh chan struct{}
+
+	// timeMu 护着下面两个时刻。
+	//
+	// startedAt 只在 Start 里写一次，endedAt 只在 reapLoop 里写一次，
+	// 但读它们的是别的 goroutine（列状态的界面），所以要一把锁。
+	timeMu     sync.Mutex
+	startedAt  time.Time
+	endedAt    time.Time
 }
 
 func NewSession(id string, ex executor.Executor, sink Sink) *Session {
-	return &Session{id, ex, sink, make(chan struct{}), executor.ExitResult{}, make(chan struct{})}
+	return &Session{
+		id:          id,
+		ex:          ex,
+		sink:        sink,
+		doneCh:      make(chan struct{}),
+		exitResult:  executor.ExitResult{},
+		drainExitCh: make(chan struct{}),
+	}
 }
 
 func (s *Session) Start(spec executor.LaunchSpec) error {
@@ -32,6 +48,7 @@ func (s *Session) Start(spec executor.LaunchSpec) error {
 		slog.Error("failed to start session", "err", err)
 		return err
 	}
+	s.setStartedAt(time.Now())
 	go s.drainLoop()
 	go s.reapLoop()
 	s.sink.OnStarted(s.id)
@@ -50,6 +67,7 @@ func (s *Session) drainLoop() {
 func (s *Session) reapLoop() {
 	res := <-s.ex.ProcessExited()
 	s.exitResult = res
+	s.setEndedAt(time.Now())
 	close(s.doneCh)
 	_ = s.ex.CloseTerminal()
 	// wait for drainLoop to finish
@@ -95,4 +113,37 @@ func (s *Session) Result() (executor.ExitResult, bool) {
 
 func (s *Session) GetLaunchSpec() executor.LaunchSpec {
 	return s.ex.GetLaunchSpec()
+}
+
+func (s *Session) setStartedAt(t time.Time) {
+	s.timeMu.Lock()
+	s.startedAt = t
+	s.timeMu.Unlock()
+}
+
+func (s *Session) setEndedAt(t time.Time) {
+	s.timeMu.Lock()
+	s.endedAt = t
+	s.timeMu.Unlock()
+}
+
+// StartedAt 是这个会话的进程起来的时刻。
+// 没起来过（启动失败、还没启动）是零值。
+func (s *Session) StartedAt() time.Time {
+	s.timeMu.Lock()
+	defer s.timeMu.Unlock()
+	return s.startedAt
+}
+
+// EndedAt 是这个会话的进程退出的时刻。
+// 还在跑是零值。
+func (s *Session) EndedAt() time.Time {
+	s.timeMu.Lock()
+	defer s.timeMu.Unlock()
+	return s.endedAt
+}
+
+// Pid 是这个会话的进程号。拿不到是 0。
+func (s *Session) Pid() int {
+	return s.ex.Pid()
 }

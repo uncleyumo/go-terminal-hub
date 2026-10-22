@@ -6,4 +6,19 @@ export interface RecordStatus {
     "exitCode": number;
     "errMsg": string;
     "running": boolean;
+
+    /**
+     * PID 是这条会话的进程号；拿不到是 0。
+     */
+    "pid": number;
+
+    /**
+     * StartedAt 是进程起来的时刻（Unix 毫秒）；没起来过是 0。
+     */
+    "startedAt": number;
+
+    /**
+     * EndedAt 是进程退出的时刻（Unix 毫秒）；还在跑是 0。
+     */
+    "endedAt": number;
 }

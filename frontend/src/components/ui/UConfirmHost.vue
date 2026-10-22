@@ -1,19 +1,47 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import UButton from './UButton.vue'
 import UIcon from './UIcon.vue'
 import { confirmState, resolveConfirm } from './confirm'
+import { captureFocus, focusInto, trapFocus } from './focus'
+
+const panel = ref<HTMLElement | null>(null)
+let restoreFocus: (() => void) | null = null
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') resolveConfirm(false)
-  if (e.key === 'Enter') resolveConfirm(true)
+  if (panel.value) trapFocus(panel.value, e)
+
+  if (e.key === 'Escape') {
+    resolveConfirm(false)
+    return
+  }
+  if (e.key !== 'Enter') return
+
+  // 焦点在按钮上时，回车就交给浏览器 —— 按下的本来就是那个按钮。
+  //
+  // 不挡的话，「焦点在取消上、按回车」会被这里先判成确认：
+  // 危险动作（删会话、停掉所有会话后退出）就这么被按下去了。
+  const target = e.target as HTMLElement | null
+  if (target?.closest('button, a, input, textarea, select')) return
+  resolveConfirm(true)
 }
 
 watch(
   () => confirmState.open,
   (open) => {
-    if (open) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+    if (open) {
+      window.addEventListener('keydown', onKeydown)
+      // 焦点挪进弹窗：开着的时候 Tab 才是在弹窗里转，不是满页面乱跑
+      restoreFocus = captureFocus()
+      void nextTick(() => {
+        if (panel.value) focusInto(panel.value)
+      })
+    } else {
+      window.removeEventListener('keydown', onKeydown)
+      // 焦点还给开之前那个按钮，接着按空格不会按到别的东西上
+      restoreFocus?.()
+      restoreFocus = null
+    }
   },
   { immediate: true },
 )
@@ -21,6 +49,8 @@ watch(
 // 组件整个被拆掉时（应用关窗），别让还挂着的 await 永远等下去 —— 按「取消」结掉。
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  restoreFocus?.()
+  restoreFocus = null
   if (confirmState.open) resolveConfirm(false)
 })
 </script>
@@ -39,9 +69,12 @@ onBeforeUnmount(() => {
         @mousedown.self="resolveConfirm(false)"
       >
         <div
+          ref="panel"
           role="alertdialog"
           aria-modal="true"
-          class="w-full max-w-[420px] overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl shadow-black/40"
+          :aria-label="confirmState.title"
+          tabindex="-1"
+          class="w-full max-w-[420px] overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl shadow-black/40 focus:outline-none"
         >
           <div class="flex gap-3 px-5 pt-5 pb-4">
             <div

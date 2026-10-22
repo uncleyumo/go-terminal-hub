@@ -11,9 +11,56 @@
   --ok: #3ecf8e;
   --warn: #f5a524;
 
+  /* 按钮按下去那一下的底色。写成变量是因为浅色下它得跟着变，
+     写死一个深灰，浅色界面上按下去会「凹」出一块脏印子。 */
+  --btn-active: #232838;
+
+  /* 按键工具条那排小按钮的底色（比底栏高半档，按得出来）。 */
+  --key-bg: #232838;
+  --key-bg-active: #2f3648;
+
+  /* 三种提示条各自的底色和字色 */
+  --banner-info-bg: #1c2740;
+  --banner-info-fg: #a8c4ff;
+  --banner-warn-bg: #3a2d12;
+  --banner-warn-fg: #ffd28a;
+  --banner-error-bg: #3a1a1a;
+  --banner-error-fg: #ffb0b0;
+
+  /* 终端底色。xterm 会用它填满整个终端区，这里是它外面的余量。 */
+  --term-bg: #000000;
+
   /* 键盘弹出时用 dvh 才不会算错；再叠一层 safe-area 给刘海和手势条让位。 */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 浅色外壳。跟着 <html data-theme="light"> 走。
+   换主题只改这一个属性，剩下的颜色全从这里出。 */
+:root[data-theme='light'] {
+  --bg: #f4f5f8;
+  --bg-elev: #ffffff;
+  --border: #d9dde5;
+  --text: #232833;
+  --text-dim: #626b7d;
+  --accent: #2159c9;
+  --danger: #c0392b;
+  --ok: #1c7a3f;
+  --warn: #8a6100;
+
+  --btn-active: #eceef3;
+
+  --key-bg: #eceef3;
+  --key-bg-active: #dde1ea;
+
+  --banner-info-bg: #e3ecff;
+  --banner-info-fg: #1b4a9c;
+  --banner-warn-bg: #fdf1d8;
+  --banner-warn-fg: #8a6100;
+  --banner-error-bg: #fbe4e4;
+  --banner-error-fg: #a83232;
+
+  --term-bg: #edeff3;
 }
 
 * {
@@ -72,7 +119,7 @@ input {
 }
 
 .btn:active {
-  background: #232838;
+  background: var(--btn-active);
 }
 
 .btn.primary {
@@ -147,18 +194,18 @@ input {
 }
 
 .banner.info {
-  background: #1c2740;
-  color: #a8c4ff;
+  background: var(--banner-info-bg);
+  color: var(--banner-info-fg);
 }
 
 .banner.warn {
-  background: #3a2d12;
-  color: #ffd28a;
+  background: var(--banner-warn-bg);
+  color: var(--banner-warn-fg);
 }
 
 .banner.error {
-  background: #3a1a1a;
-  color: #ffb0b0;
+  background: var(--banner-error-bg);
+  color: var(--banner-error-fg);
 }
 
 /* 居中的表单页（登录） */
@@ -225,13 +272,66 @@ input {
   color: var(--text-dim);
 }
 
+/* 弹窗。整页遮罩，不用原生 confirm()：
+   原生弹窗在手机浏览器里样式不受控，长按选中之类的手势还会跟它打架。 */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  /* 弹窗比屏幕还高的时候（键盘弹出来）滚它，别把底下的按钮切掉 */
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.modal {
+  width: 100%;
+  max-width: 340px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 16px 14px;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.modal-body {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-actions .btn {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.modal-actions .btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
 /* 终端区 */
 .term-host {
   flex: 1;
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: var(--term-bg);
 }
 
 /* 让手指能拖动 xterm 的回滚历史。

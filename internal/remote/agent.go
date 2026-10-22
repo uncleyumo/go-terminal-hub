@@ -80,6 +80,12 @@ type Agent struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	bridge *bridge
+
+	// browserOnline 记「浏览器端有没有人连着 relay」。
+	//
+	// 单独放一个字段，不塞在 status 里：status 会被 setStatus 整个换掉
+	// （连接中、已连接、出错），换的时候不该把这个标记一起抹掉。
+	browserOnline bool
 }
 
 func NewAgent(h *hub.Hub, onStatus func(Status)) *Agent {
@@ -155,6 +161,27 @@ func (a *Agent) Config() Config {
 
 func (a *Agent) setStatus(s Status) {
 	a.mu.Lock()
+	// 浏览器在不在是另一件事，别被这次状态替换顺手抹掉。
+	s.BrowserOnline = a.browserOnline
+	a.status = s
+	a.mu.Unlock()
+	if a.onStatus != nil {
+		a.onStatus(s)
+	}
+}
+
+// setBrowserOnline 记下浏览器端的在线状态，并把新状态推给桌面界面。
+//
+// 没人关心「是不是第一次变成这个值」以外的事，所以值没变就不通知。
+func (a *Agent) setBrowserOnline(online bool) {
+	a.mu.Lock()
+	if a.browserOnline == online {
+		a.mu.Unlock()
+		return
+	}
+	a.browserOnline = online
+	s := a.status
+	s.BrowserOnline = online
 	a.status = s
 	a.mu.Unlock()
 	if a.onStatus != nil {
@@ -263,6 +290,13 @@ func (a *Agent) connectOnce(ctx context.Context, cfg Config) error {
 	a.mu.Lock()
 	a.bridge = b
 	a.mu.Unlock()
+
+	// 这条新连接还没收到中心站的问候，不知道浏览器端有没有人。
+	// 先按「没人」记着，收到 browser_online 再改。
+	//
+	// 不这么做的话：浏览器在 agent 掉线期间走了，就再也没人告诉 agent
+	// 「人已经不在了」，桌面会一直显示着「远程端在线」。
+	a.setBrowserOnline(false)
 
 	a.setStatus(Status{State: StateConnected, URL: cfg.URL})
 	slog.Info("remote bridge connected", "url", cfg.URL)

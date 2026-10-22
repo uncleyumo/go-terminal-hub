@@ -136,7 +136,14 @@ function onDragEnd() {
         />
       </UTooltip>
       <UTooltip :content="t('list.create')">
-        <UButton variant="ghost" size="sm" square icon="plus" @click="emit('create')" />
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="plus"
+          :aria-label="t('list.create')"
+          @click="emit('create')"
+        />
       </UTooltip>
     </div>
 
@@ -158,12 +165,14 @@ function onDragEnd() {
 
       <!-- 行用 div 而不是 button：里面还嵌着两个真按钮，button 套 button 是非法结构，
            浏览器的 HTML 解析器会把内层那个提前关掉，点了没反应 -->
+      <div role="list" class="flex flex-col">
       <div
         v-for="(session, index) in filtered"
         :key="session.config.id"
+        :data-session-row="session.config.id"
         tabindex="0"
-        role="option"
-        :aria-selected="session.config.id === selectedId"
+        role="listitem"
+        :aria-current="session.config.id === selectedId ? 'true' : undefined"
         :aria-label="label(session)"
         :draggable="!dndDisabled"
         class="group relative mb-0.5 flex w-full items-center gap-2.5 rounded-lg py-2 pr-1.5 pl-2.5 text-left transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent"
@@ -178,6 +187,7 @@ function onDragEnd() {
         ]"
         @click="emit('select', session.config.id)"
         @keydown.enter="emit('select', session.config.id)"
+        @keydown.space.prevent="emit('select', session.config.id)"
         @dragstart="onDragStart(session, $event)"
         @dragover="onDragOver(index, $event)"
         @dragleave="onDragLeave(index)"
@@ -248,6 +258,7 @@ function onDragEnd() {
             @click="emit('remove', session)"
           />
         </span>
+      </div>
       </div>
     </div>
   </div>

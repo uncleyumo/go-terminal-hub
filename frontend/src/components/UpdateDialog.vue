@@ -30,8 +30,10 @@ const props = defineProps<{
   state: UpdateState | null
   /** 当前运行中的会话数。重启更新会把它们全关掉。 */
   runningCount: number
-  /** 让 App.vue 停掉所有会话，返回没停掉的会话名（空数组 = 停干净了）。 */
-  stopAllSessions: () => Promise<string[]>
+  /** 让 App.vue 停掉所有会话。
+   *  返回没停掉的会话名（空数组 = 停干净了）；
+   *  整个调用失败时 error 带上原因，跟「某几条停不掉」分开说。 */
+  stopAllSessions: () => Promise<{ failed: string[]; error?: string }>
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -108,9 +110,13 @@ async function restart() {
     })
     if (!ok) return
 
-    const failed = await props.stopAllSessions()
-    if (failed.length > 0) {
-      notify.error(t('update.stopFailed', { names: failed.join(', ') }))
+    const result = await props.stopAllSessions()
+    if (result.error) {
+      notify.error(`${t('update.stopAllFailed')}: ${result.error}`)
+      return
+    }
+    if (result.failed.length > 0) {
+      notify.error(t('update.stopFailed', { names: result.failed.join(', ') }))
       return
     }
   }
@@ -200,7 +206,7 @@ const close = () => emit('update:modelValue', false)
     <template #footer>
       <!-- 出错：重试 + 打开下载页 -->
       <template v-if="phase === 'error'">
-        <UButton variant="ghost" size="sm" @click="openReleasesPage">{{ t('update.openPage') }}</UButton>
+        <UButton variant="ghost" size="sm" @click="void run(() => openReleasesPage())">{{ t('update.openPage') }}</UButton>
         <UButton variant="default" size="sm" @click="close">{{ t('action.close') }}</UButton>
         <UButton variant="primary" size="sm" :disabled="busy" @click="retry">{{ t('update.retry') }}</UButton>
       </template>
@@ -215,7 +221,7 @@ const close = () => emit('update:modelValue', false)
       <!-- 下载中：取消 -->
       <template v-else-if="phase === 'downloading'">
         <UButton variant="default" size="sm" @click="close">{{ t('update.later') }}</UButton>
-        <UButton variant="primary" size="sm" @click="cancelUpdateDownload">{{ t('update.cancel') }}</UButton>
+        <UButton variant="primary" size="sm" @click="void run(() => cancelUpdateDownload())">{{ t('update.cancel') }}</UButton>
       </template>
 
       <!-- 待重启：立即重启 / 稍后 -->

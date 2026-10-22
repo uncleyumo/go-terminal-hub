@@ -193,13 +193,13 @@ watch(more, (v) => remember(MORE_KEY, v))
   min-height: 42px;
   padding: 4px 8px;
   border-radius: 7px;
-  background: #232838;
+  background: var(--key-bg);
   border: 1px solid var(--border);
   color: var(--text);
 }
 
 .key:active {
-  background: #2f3648;
+  background: var(--key-bg-active);
 }
 
 .key .label {

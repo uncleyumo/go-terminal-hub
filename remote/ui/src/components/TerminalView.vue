@@ -6,7 +6,7 @@
 //   - 我是旁观方 → 不 fit，改成 resize 到 PTY 的真实网格，居中显示
 // 旁观时绝不能报尺寸：窗口一缩放就会把控制方的 PTY 尺寸顶掉。
 import { onBeforeUnmount, onMounted, ref, watch, useTemplateRef } from 'vue'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { HubClient, RESET_MARKER } from '../api'
 import { shrinkImage } from '../image'
@@ -21,6 +21,8 @@ const props = defineProps<{
   size: { cols: number; rows: number } | null
   client: HubClient
   connected: boolean
+  /** 终端配色。改了就换掉已建好的终端的配色。 */
+  theme: ITheme
 }>()
 
 const emit = defineEmits<{
@@ -125,6 +127,30 @@ function syncScrollState() {
   if (!up) freshOutput.value = false
 }
 
+/**
+ * 把当前视口的文字取出来。
+ *
+ * 取的是「屏幕上看得见的那几行」，不是整个回滚历史——
+ * 手机上没法划屏选文字，用户要的就是眼前这一屏。
+ *
+ * 停在历史里的时候取的是正在看的那一段（不是最底下那段）：
+ * 用户往上翻就是为了看别的，取最新的那屏等于没回答问题。
+ */
+function readViewport(): string {
+  if (!term) return ''
+  const buf = term.buffer.active
+  const top = buf.viewportY
+  const lines: string[] = []
+  for (let y = top; y < top + term.rows; y++) {
+    const line = buf.getLine(y)
+    // 末尾的空格去掉：终端右边那一大片空白不是内容
+    lines.push(line ? line.translateToString(true) : '')
+  }
+  // 底下几行是屏幕没画到的地方（空的），留着只会让复制出来的东西尾巴上一串空行
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  return lines.join('\n')
+}
+
 // --- 输入 -------------------------------------------------------------------
 
 function write(data: string) {
@@ -222,11 +248,7 @@ onMounted(() => {
     fontSize: fontSize.value,
     scrollback: 2000, // 手机内存有限，别跟桌面端一样开 5000
     fontFamily: '"Cascadia Mono", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
-    theme: {
-      background: '#000000',
-      foreground: '#e4e6eb',
-      cursor: '#4f8cff',
-    },
+    theme: props.theme,
     // 手机上没有鼠标，关掉右键菜单之类的默认行为
     allowProposedApi: true,
   })
@@ -299,7 +321,7 @@ function writeOutput(bytes: Uint8Array) {
   term.write(bytes)
 }
 
-defineExpose({ writeOutput, insertPath })
+defineExpose({ writeOutput, insertPath, readViewport })
 
 // 控制方换人：自己拿到控制权就重新 fit 并上报，交出去就切成对方的网格
 watch(
@@ -333,6 +355,14 @@ watch(fontSize, () => {
   if (isController()) scheduleFit()
   else applyViewerSize()
 })
+
+// 换了配色包：把已建好的终端一起换掉，不然还是老颜色。
+watch(
+  () => props.theme,
+  (next) => {
+    if (term) term.options.theme = next
+  },
+)
 </script>
 
 <template>
@@ -382,7 +412,10 @@ watch(fontSize, () => {
       <button v-if="isController()" class="btn" :disabled="uploading" @click="fileRef?.click()">
         发图
       </button>
-      <button v-if="isController()" class="btn" @click="emit('release')">交还控制</button>
+      <button v-if="isController()" class="btn" @click="emit('release')">
+        <span class="wide-only">交还控制</span>
+        <span class="narrow-only">交还</span>
+      </button>
     </div>
 
     <input
@@ -498,6 +531,22 @@ watch(fontSize, () => {
   }
 }
 
+/* 窄屏（320px 一档）底栏放不下「交还控制」四个字：
+   那一排是 nowrap + overflow hidden，多出来的字会被直接切掉，
+   按钮点不到。窄屏换成「交还」两个字，宽屏还是完整的。 */
+.narrow-only {
+  display: none;
+}
+
+@media (max-width: 360px) {
+  .wide-only {
+    display: none;
+  }
+  .narrow-only {
+    display: inline;
+  }
+}
+
 /* --- 回到底部：浮在终端上，不进布局流 ------------------------------------- */
 
 .jump-bottom {
@@ -521,7 +570,7 @@ watch(fontSize, () => {
 }
 
 .jump-bottom:active {
-  background: #232838;
+  background: var(--btn-active);
 }
 
 /* 底下又来了输出。整颗药丸换成强调色，比一个小圆点在手机上好认得多 */

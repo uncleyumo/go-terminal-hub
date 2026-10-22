@@ -273,4 +273,10 @@ type Executor interface {
 	KillProcess() error
 
 	GetLaunchSpec() LaunchSpec
+
+	// Pid 是这个会话的进程号。拿不到时返回 0。
+	//
+	// 用途只有一个：让人能把「界面上的这条会话」和「任务管理器里的那个进程」
+	// 对上号。会话名可以随便起，进程号不会。
+	Pid() int
 }

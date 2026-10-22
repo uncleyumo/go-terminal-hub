@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import UIcon from './UIcon.vue'
+import { confirmState } from './confirm'
+import { captureFocus, focusInto, trapFocus } from './focus'
 
 const props = withDefaults(
   defineProps<{
@@ -12,17 +14,40 @@ const props = withDefaults(
      *  560 是当初按「确认框只有一句话」定的，会话表单那八种 kind 排不下，
      *  只能让调用方自己说要多宽。 */
     width?: string
+    /** 内容区不要内边距、也不要自己滚。
+     *  设置窗口是左右两栏，滚动归右栏自己管 —— 外面再套一层 padding 和滚动条，
+     *  左边那条竖线就会浮在半空中。 */
+    flush?: boolean
   }>(),
-  { bodyMaxHeight: '62vh', width: '560px' },
+  { bodyMaxHeight: '62vh', width: '560px', flush: false },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+
+const panel = ref<HTMLElement | null>(null)
+const body = ref<HTMLElement | null>(null)
+let restoreFocus: (() => void) | null = null
+
+// 叠着开的弹窗（设置里再点「远程访问」这类）。Esc 和 Tab 只归最上面那一层管：
+// 不排这个队的话，一按 Esc 会把两层一起关掉 —— 用户想的是「退回设置」。
+const dialogStack: symbol[] = []
+const dialogId = Symbol('dialog')
+const isTopmost = () => dialogStack[dialogStack.length - 1] === dialogId
 
 function close() {
   emit('update:modelValue', false)
 }
 
 function onKeydown(e: KeyboardEvent) {
+  // 确认框开着的时候，键盘归它管。
+  //
+  // 不挡的话，在确认框里按 Esc 会把确认框和底下这个弹框一起关掉 ——
+  // 用户想的是「取消这一步」，结果连整个表单都没了。
+  if (confirmState.open) return
+  if (!isTopmost()) return
+
+  // Tab 在弹框里转圈，别跑到背后的页面上去
+  if (panel.value) trapFocus(panel.value, e)
   if (e.key === 'Escape') close()
 }
 
@@ -30,13 +55,34 @@ function onKeydown(e: KeyboardEvent) {
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+    if (open) {
+      dialogStack.push(dialogId)
+      window.addEventListener('keydown', onKeydown)
+      // 焦点挪进弹框；关的时候还回去
+      restoreFocus = captureFocus()
+      void nextTick(() => {
+        // 优先落在内容区的第一个能聚焦的东西上（表单弹窗就是第一个输入框），
+        // 落点跟用户看到的顺序一致。
+        if (panel.value) focusInto(panel.value, body.value)
+      })
+    } else {
+      const at = dialogStack.indexOf(dialogId)
+      if (at >= 0) dialogStack.splice(at, 1)
+      window.removeEventListener('keydown', onKeydown)
+      restoreFocus?.()
+      restoreFocus = null
+    }
   },
   { immediate: true },
 )
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  const at = dialogStack.indexOf(dialogId)
+  if (at >= 0) dialogStack.splice(at, 1)
+  window.removeEventListener('keydown', onKeydown)
+  restoreFocus?.()
+  restoreFocus = null
+})
 </script>
 
 <template>
@@ -58,10 +104,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           enter-from-class="opacity-0 scale-95 translate-y-1"
         >
           <div
+            ref="panel"
             role="dialog"
             aria-modal="true"
             :aria-label="title"
-            class="flex max-h-full w-full flex-col overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl shadow-black/40"
+            tabindex="-1"
+            class="flex max-h-full w-full flex-col overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl shadow-black/40 focus:outline-none"
             :style="{ maxWidth: width }"
           >
             <div class="flex flex-none items-center gap-2 border-b border-line px-5 py-3.5">
@@ -76,8 +124,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             </div>
 
             <div
-              class="min-h-0 flex-1 overflow-y-auto px-5 py-4"
-              :style="{ maxHeight: bodyMaxHeight }"
+              ref="body"
+              :class="
+                flush
+                  ? 'min-h-0 flex-1 overflow-hidden'
+                  : 'min-h-0 flex-1 overflow-y-auto px-5 py-4'
+              "
+              :style="flush ? undefined : { maxHeight: bodyMaxHeight }"
             >
               <slot />
             </div>

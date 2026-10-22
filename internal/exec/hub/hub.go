@@ -66,6 +66,15 @@ type RecordStatus struct {
 	ExitCode int    `json:"exitCode"`
 	ErrMsg   string `json:"errMsg"`
 	Running  bool   `json:"running"`
+
+	// PID 是这条会话的进程号；拿不到是 0。
+	PID int `json:"pid"`
+
+	// StartedAt 是进程起来的时刻（Unix 毫秒）；没起来过是 0。
+	StartedAt int64 `json:"startedAt"`
+
+	// EndedAt 是进程退出的时刻（Unix 毫秒）；还在跑是 0。
+	EndedAt int64 `json:"endedAt"`
 }
 
 var (
@@ -508,6 +517,16 @@ func (h *Hub) Remove(id string) error {
 	return nil
 }
 
+// unixMillis 把一个时刻变成 Unix 毫秒；零值（没发生过）变 0。
+//
+// 界面那边直接 new Date(ms) 就能用，不用再解析字符串。
+func unixMillis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
 func (h *Hub) ListRecordStatus() []RecordStatus {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -515,30 +534,23 @@ func (h *Hub) ListRecordStatus() []RecordStatus {
 	var result []RecordStatus
 	for id, record := range h.records {
 		exitResult, done := record.sess.Result()
+		status := RecordStatus{
+			ID:        id,
+			ExitCode:  -1,
+			PID:       record.sess.Pid(),
+			StartedAt: unixMillis(record.sess.StartedAt()),
+			EndedAt:   unixMillis(record.sess.EndedAt()),
+		}
 		if done {
+			status.ExitCode = exitResult.Code
+			status.Running = false
 			if exitResult.Err != nil {
-				result = append(result, RecordStatus{
-					ID:       id,
-					ExitCode: exitResult.Code,
-					ErrMsg:   exitResult.Err.Error(),
-					Running:  false,
-				})
-			} else {
-				result = append(result, RecordStatus{
-					ID:       id,
-					ExitCode: exitResult.Code,
-					ErrMsg:   "",
-					Running:  false,
-				})
+				status.ErrMsg = exitResult.Err.Error()
 			}
 		} else {
-			result = append(result, RecordStatus{
-				ID:       id,
-				ExitCode: -1,
-				ErrMsg:   "",
-				Running:  true,
-			})
+			status.Running = true
 		}
+		result = append(result, status)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].ID > result[j].ID

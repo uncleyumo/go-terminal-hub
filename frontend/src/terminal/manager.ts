@@ -41,6 +41,16 @@ interface Entry {
 
 const entries = new Map<string, Entry>()
 
+/**
+ * 已经被删掉的会话 id。
+ *
+ * 删掉一条会话之后，它最后那几行输出还可能从后端飞过来（进程刚停、
+ * 事件还在路上）。收到就 ensure() 建实例的话，会凭空多出一个没人看得见的
+ * 终端——列表里已经没这条了，界面上却还挂着一块黑屏。
+ * 所以这里记一份「已删名单」，收到这些 id 的输出直接扔掉。
+ */
+const disposed = new Set<string>()
+
 /** 终端字号。默认值也是「切走之后回到的那个值」。 */
 const DEFAULT_FONT_SIZE = 13
 const MIN_FONT_SIZE = 8
@@ -357,7 +367,7 @@ function flashFontSize(entry: Entry, size: number) {
   }
   host.appendChild(entry.badge)
 
-  entry.badge.textContent = `字号 ${size}`
+  entry.badge.textContent = i18n.global.t('term.fontSize', { size })
   entry.badge.style.opacity = '1'
   if (entry.badgeTimer !== null) window.clearTimeout(entry.badgeTimer)
   entry.badgeTimer = window.setTimeout(() => {
@@ -562,6 +572,7 @@ function scheduleFit(id: string) {
 // ensure() 只建实例、不 open()：内容先进 buffer，
 // 等这一行被选中、attach() 里 open() 之后，buffer 里的东西照常渲染出来。
 export function write(id: string, text: string) {
+  if (disposed.has(id)) return
   ensure(id).term.write(text)
 }
 
@@ -580,4 +591,28 @@ export function disposeAll() {
     entry.container.remove()
   }
   entries.clear()
+}
+
+/**
+ * 彻底销毁某条会话的终端实例。
+ *
+ * 删掉一条会话时要调它。实例留在 entries 里，就是一份没人再看得见的终端
+ * （连它的输出缓冲、DOM 容器一起），删得越多攒得越多。
+ */
+export function dispose(id: string) {
+  disposed.add(id)
+
+  const timer = fitTimers.get(id)
+  if (timer !== undefined) {
+    window.clearTimeout(timer)
+    fitTimers.delete(id)
+  }
+
+  const entry = entries.get(id)
+  if (!entry) return
+  if (entry.badgeTimer !== null) window.clearTimeout(entry.badgeTimer)
+  entry.observer.disconnect()
+  entry.term.dispose()
+  entry.container.remove()
+  entries.delete(id)
 }

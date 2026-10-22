@@ -56,6 +56,13 @@ export interface Settings {
     "remote": RemoteSettings;
 
     /**
+     * Features 是功能开关：键是功能 id，false = 关掉。
+     * 只记用户改过的那几个 —— 默认值写在前端的注册表里（src/features.ts），
+     * 这里再抄一份默认值的话，以后改默认值会被设置文件里那份旧默认顶回去。
+     */
+    "features"?: { [_ in string]?: boolean } | null;
+
+    /**
      * SkippedUpdateVersion 是用户在更新弹窗里点过「跳过这个版本」的那个版本号。
      * Wails 更新器自己也有个 SkipVersion，但只记在内存里，重启就忘；
      * 跨重启要靠这里存一份。空字符串 = 没跳过任何版本。

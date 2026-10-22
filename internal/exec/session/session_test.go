@@ -63,6 +63,7 @@ type fakeExecutor struct {
 	onStop     func() // StopProcess() 被调时干什么
 	onKill     func() // KillProcess() 被调时干什么
 	spec       executor.LaunchSpec
+	pid        int // Pid() 返回的进程号
 }
 
 // newFakeExecutor 造一个跑完就走的假进程：Start 后吐 chunks，并自动报退出码。
@@ -146,6 +147,9 @@ func (f *fakeExecutor) CloseTerminal() error {
 // GetLaunchSpec 照着 Start 存下来的那份返回，没起过就返回零值。
 // 真实现（conpty_windows.go）返回的是 Start 时的快照，不是重新拼的——这里跟着一样。
 func (f *fakeExecutor) GetLaunchSpec() executor.LaunchSpec { return f.spec }
+
+// Pid 返回替身设的进程号；没设就是 0（拿不到）。
+func (f *fakeExecutor) Pid() int { return f.pid }
 
 var _ executor.Executor = (*fakeExecutor)(nil)
 
@@ -307,5 +311,46 @@ func TestSessionStopProcessErrorKillsNow(t *testing.T) {
 	case <-ex.killCalls:
 	default:
 		t.Fatal("StopProcess 报错后没有强杀")
+	}
+}
+
+// TestSessionRecordsStartAndEndTime 记下「什么时候起来的」「什么时候退的」。
+//
+// 界面上「运行时长」只有这两个时刻能算出来：
+// 起始时刻是零 = 根本没起来过，结束时刻是零 = 还在跑。
+func TestSessionRecordsStartAndEndTime(t *testing.T) {
+	ex := newFakeExecutor([][]byte{[]byte("x")}, executor.ExitResult{Code: 0})
+	ex.pid = 4242
+	sink := newFakeSink()
+	s := NewSession("s7", ex, sink)
+
+	if !s.StartedAt().IsZero() {
+		t.Fatal("还没启动就有起始时刻了")
+	}
+	if err := s.Start(executor.LaunchSpec{}); err != nil {
+		t.Fatalf("Start 返回错误: %v", err)
+	}
+
+	if s.StartedAt().IsZero() {
+		t.Fatal("启动之后起始时刻还是零")
+	}
+	if s.Pid() != 4242 {
+		t.Errorf("进程号 = %d, 期望 4242", s.Pid())
+	}
+	if !s.EndedAt().IsZero() {
+		t.Fatal("进程还在跑就有结束时刻了")
+	}
+
+	select {
+	case <-sink.exitedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("2s 内 sink 没收到 OnProcessExited")
+	}
+
+	if s.EndedAt().IsZero() {
+		t.Fatal("进程退出了，结束时刻还是零")
+	}
+	if s.EndedAt().Before(s.StartedAt()) {
+		t.Errorf("结束时刻 %v 早于起始时刻 %v", s.EndedAt(), s.StartedAt())
 	}
 }

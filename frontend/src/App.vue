@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SessionList from './components/SessionList.vue'
 import SessionForm from './components/SessionForm.vue'
@@ -8,17 +8,20 @@ import TermBackgroundDialog from './components/TermBackgroundDialog.vue'
 import AppInfoDialog from './components/AppInfoDialog.vue'
 import UpdateDialog from './components/UpdateDialog.vue'
 import RemoteSettingsDialog, { type RemoteConfig } from './components/RemoteSettingsDialog.vue'
+import SessionTabs, { type TabItem } from './components/SessionTabs.vue'
+import SettingsDialog from './components/SettingsDialog.vue'
 import UButton from './components/ui/UButton.vue'
 import UConfirmHost from './components/ui/UConfirmHost.vue'
 import UDialog from './components/ui/UDialog.vue'
 import UDropMenu from './components/ui/UDropMenu.vue'
 import UIcon from './components/ui/UIcon.vue'
 import UIconMenu from './components/ui/UIconMenu.vue'
-import USwitch from './components/ui/USwitch.vue'
 import UToaster from './components/ui/UToaster.vue'
 import UTooltip from './components/ui/UTooltip.vue'
 import { confirm } from './components/ui/confirm'
 import { notify } from './components/ui/toast'
+import { flyChips, measureChips, revealTabs, type Chip } from './components/tabs-motion'
+import { featureOn } from './features'
 import { Browser, Clipboard } from '@wailsio/runtime'
 import {
   checkUpdate,
@@ -56,6 +59,7 @@ import {
 import {
   applyAppBackground,
   clear as clearTerminal,
+  dispose,
   disposeAll,
   enterViewer,
   exitViewer,
@@ -172,19 +176,137 @@ function readSidebarCollapsed(): boolean {
   }
 }
 
-function toggleSidebar() {
-  sidebarCollapsed.value = !sidebarCollapsed.value
+function persistCollapsed(collapsed: boolean) {
   try {
-    window.localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? '1' : '0')
+    window.localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0')
   } catch {
     // 存不进去只是下次不记住，折叠本身照样能用
   }
 }
 
-const localeOptions = [
-  { value: 'en', label: 'English', icon: 'globe' },
-  { value: 'zh-CN', label: '简体中文', icon: 'globe' },
-]
+async function toggleSidebar() {
+  const next = !sidebarCollapsed.value
+  // 只有「标签随折叠出现/消失」的那一版才有东西要飞。功能关着、或者设成
+  // 「展开也显示标签」时，标签一直在那儿，收起只是把列表让出来。
+  const animate =
+    featureOn(settings.value, 'sessionTabs') && !alwaysTabs.value && tabs.value.length > 0
+  if (!animate) {
+    sidebarCollapsed.value = next
+    persistCollapsed(next)
+    return
+  }
+
+  const chips: Chip[] = tabs.value.map((tab) => ({
+    id: tab.id,
+    label: tab.name,
+    running: tab.running,
+  }))
+  // 起点：收起前量列表行，展开前量顶栏标签
+  const source = measureChips(next ? 'row' : 'tab', chips)
+
+  // 终点必须在「最终布局」里量：先关掉过渡把布局一步做到位，量完再退回去。
+  // 不这么做量到的是过渡途中的位置，飞到一半就落空了。
+  const html = document.documentElement
+  html.classList.add('no-anim')
+  sidebarCollapsed.value = next
+  await nextTick()
+  const target = measureChips(next ? 'tab' : 'row', chips)
+
+  // 还在 no-anim 里把布局退回原样，让浏览器记下「原来的宽度」是多少；
+  // 这两步之间不能露出过渡，否则退回的那一下会被当成一次真的展开动画。
+  sidebarCollapsed.value = !next
+  await nextTick()
+  void document.body.offsetHeight
+  html.classList.remove('no-anim')
+  // 过渡重新可用之后先算一帧，再切过去 —— 这样起点是原宽度，不是 0
+  void document.body.offsetHeight
+
+  sidebarCollapsed.value = next
+  persistCollapsed(next)
+  await nextTick()
+
+  flyChips(chips, source, target)
+  // 收起时标签在飞行途中是透明的，落地那一刻才亮起来
+  if (next) revealTabs(chips)
+}
+
+// —— 顶栏标签 ——
+//
+// 哪些会话有标签：运行中的，加上当前这条（它停着也得看得见自己）。
+// 顺序只在这次运行里有效 —— 每次开机时会话的启动顺序本来就会变，
+// 记下来的顺序第二天对不上号。
+const ALWAYS_TABS_KEY = 'hub.tabs.always'
+const alwaysTabs = ref(readAlwaysTabs())
+
+function readAlwaysTabs(): boolean {
+  try {
+    return window.localStorage.getItem(ALWAYS_TABS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function setAlwaysTabs(value: boolean) {
+  alwaysTabs.value = value
+  try {
+    window.localStorage.setItem(ALWAYS_TABS_KEY, value ? '1' : '0')
+  } catch {
+    // 同上：记不住就记不住，这次照样生效
+  }
+}
+
+const tabOrder = ref<string[]>([])
+
+// 会话列表一变就把新会话补到队尾、把删掉的摘掉；用户拖过的相对顺序不动
+watch(
+  sessions,
+  (list) => {
+    const alive = new Set(list.map((s) => s.config.id))
+    const kept = tabOrder.value.filter((id) => alive.has(id))
+    for (const s of list) if (!kept.includes(s.config.id)) kept.push(s.config.id)
+    if (kept.join('\u0000') !== tabOrder.value.join('\u0000')) tabOrder.value = kept
+  },
+  { immediate: true },
+)
+
+const tabs = computed<TabItem[]>(() => {
+  const byId = new Map(sessions.value.map((s) => [s.config.id, s]))
+  return tabOrder.value
+    .filter((id) => byId.has(id))
+    .map((id) => {
+      const s = byId.get(id)!
+      return { id, name: s.config.name || id, running: s.running }
+    })
+    .filter((tab) => tab.running || tab.id === selectedId.value)
+})
+
+const tabsVisible = computed(
+  () =>
+    featureOn(settings.value, 'sessionTabs') &&
+    tabs.value.length > 0 &&
+    (sidebarCollapsed.value || alwaysTabs.value),
+)
+
+function onTabsReorder(ids: string[]) {
+  // 拖过的这几条排前面，没上标签的（停着的会话）保持原来的相对顺序跟在后面
+  const moved = new Set(ids)
+  tabOrder.value = [...ids, ...tabOrder.value.filter((id) => !moved.has(id))]
+}
+
+// 功能开关。先落界面、再把整份设置写回去，失败只回滚那一个键。
+async function setFeature(id: string, on: boolean) {
+  const previous = settings.value.features ?? {}
+  const next = { ...previous, [id]: on }
+  settings.value = { ...settings.value, features: next }
+  try {
+    await saveSettings(settings.value)
+  } catch (error) {
+    settings.value = { ...settings.value, features: previous }
+    notify.error(`${t('msg.settingFailed')}: ${String(error)}`)
+  }
+}
+
+const settingsOpen = ref(false)
 
 // 顺序跟 Windows「个性化 → 颜色」里的排法一致：浅色 → 深色 → 跟随系统
 // computed 是必须的：t() 只在被调用那一刻取一次值，写成普通数组的话切到中文后
@@ -198,6 +320,66 @@ const themeOptions = computed(() => [
 const selected = computed(
   () => sessions.value.find((s) => s.config.id === selectedId.value) ?? null,
 )
+
+// —— 运行时（启动时间 / 停止时间 / 跑了多久 / 哪个进程）——
+// 放在配置下拉里：那是「这条会话现在什么情况」的地方。
+//
+// 运行时长在跑的时候要一秒一秒地走，所以开着的时候才取时间。
+// 面板关着、或者这条会话没在跑，就不用再动了。
+const now = ref(Date.now())
+let tickTimer: number | null = null
+
+function stopTick() {
+  if (tickTimer !== null) {
+    window.clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+watch(
+  () => configOpen.value && selected.value?.running === true,
+  (need) => {
+    stopTick()
+    if (!need) return
+    now.value = Date.now()
+    tickTimer = window.setInterval(() => {
+      now.value = Date.now()
+    }, 1000)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(stopTick)
+
+// 后端给的是 Unix 毫秒；0 表示「从来没发生过」这一档。
+function formatMoment(ms: number): string {
+  if (ms === 0) return '—'
+  return new Date(ms).toLocaleString(locale.value)
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.floor(ms / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+}
+
+const runtimeInfo = computed(() => {
+  const st = selected.value?.status
+  if (!st || st.startedAt === 0) {
+    return { started: t('detail.neverStarted'), ended: '—', duration: '—', pid: '—' }
+  }
+  // 还在跑就算到「现在」；跑完了就按退出那一刻算。
+  const end = st.endedAt === 0 ? now.value : st.endedAt
+  return {
+    started: formatMoment(st.startedAt),
+    ended: st.endedAt === 0 ? t('detail.stillRunning') : formatMoment(st.endedAt),
+    duration: formatDuration(Math.max(0, end - st.startedAt)),
+    pid: st.pid > 0 ? String(st.pid) : '—',
+  }
+})
 
 // 正在跑的会话。退出前确认、更新前确认都要问「关掉它们行不行」，
 // 数就是这个数。
@@ -233,6 +415,11 @@ async function takeBackControl() {
   try {
     await takeControl(id, size.cols, size.rows)
   } catch (error) {
+    // 没要回来：把旁观状态装回去。
+    // 不装的话，界面上看着已经是「我控制着」，后端却还认为远程端在控制 ——
+    // 敲进去的字会被后端拒掉，而界面上一点提示都没有。
+    const web = selectedPtySize.value
+    if (web) enterViewer(id, web.cols, web.rows)
     notify.error(`${t('remote.takeBackFailed')}: ${String(error)}`)
   }
 }
@@ -408,14 +595,19 @@ async function loadSettings() {
     const stored = await getSettings()
     // 整份存下来，不挑字段 —— 挑漏了哪个，往回写的时候就会把那个字段抹成零值
     settings.value = stored
-    // 值为空串（文件里没写 / 后端没兜默认值）时回落到默认值
-    locale.value = normalizeLocale(stored.language)
-    setLocale(locale.value)
     // 后端不做值校验（settings.json 里写 "fr" 也原样返回），归一只能在前端做
+    if (localeTouched) {
+      // 用户在这段等待里已经切过语言了 —— 后端拿回来的还是他切之前的值，
+      // 盖回去就等于把刚点的选择吃掉。保留用户选的那个，其余字段照常覆盖。
+      settings.value = { ...stored, language: locale.value }
+    } else {
+      locale.value = normalizeLocale(stored.language)
+      setLocale(locale.value)
+    }
     if (themeTouched) {
       // 用户在这段等待里已经点过主题了 —— 后端拿回来的还是他改之前的值，
       // 盖回去就等于把刚点的选择吃掉。保留用户选的那个，其余字段照常覆盖。
-      settings.value = { ...stored, theme: themeMode.value }
+      settings.value = { ...settings.value, theme: themeMode.value }
     } else {
       themeMode.value = normalizeTheme(stored.theme)
       applyTheme(themeMode.value)
@@ -425,14 +617,30 @@ async function loadSettings() {
   }
 }
 
+// 语言切换的竞态，跟主题切换一个道理（2026-10-21 补上）：
+// ① 界面挂载时 loadSettings 还在等后端返回，这期间用户已经切过语言的话，
+//    loadSettings 一回来就会把旧值盖回去，看着就是「点了没反应」。
+// ② 连着切两次时，先发的那次如果后到、且失败，会拿它自己记的旧值回滚，
+//    把用户后一次的选择顶掉。
+let localeTouched = false
+let localeChangeSeq = 0
+
 async function changeLocale(value: string) {
   const next = value as AppLocale
+  const previous = locale.value
+  const seq = ++localeChangeSeq
+  localeTouched = true
   locale.value = next
   setLocale(next)
   try {
     await saveSettings({ ...settings.value, language: next })
+    // 已经有更新的选择在了，这次的结果作废
+    if (seq !== localeChangeSeq) return
     settings.value.language = next
   } catch (error) {
+    if (seq !== localeChangeSeq) return
+    locale.value = previous
+    setLocale(previous)
     notify.error(`${t('msg.settingFailed')}: ${String(error)}`)
   }
 }
@@ -507,6 +715,9 @@ async function remove(session: SessionView) {
   if (!ok) return
   try {
     await deleteSession(session.config.id)
+    // 终端实例也一起销毁。留着就是一份没人看得见的终端——
+    // 列表里已经没这条了，内存里还挂着一整块 buffer 和它的 DOM。
+    dispose(session.config.id)
     notify.success(t('msg.removed'))
     if (selectedId.value === session.config.id) selectedId.value = null
     await load()
@@ -584,7 +795,13 @@ async function quit() {
     }
   }
 
-  await quitApp()
+  try {
+    await quitApp()
+  } catch (error) {
+    // 退不掉就退不掉，但得说一声。
+    // 静默失败的话，界面上看着像退了，进程还在那儿跑着。
+    notify.error(`${t('msg.quitFailed')}: ${String(error)}`)
+  }
 }
 
 // 仓库地址写死在这儿，不从后端拿：它跟着发布地址走，前端是唯一会用到它的地方。
@@ -638,14 +855,17 @@ function scheduleAutoCheck() {
 //
 // 不在这里自己遍历调用 stopSession：后端 StopAllSessions 才拿得到
 // 「谁真的没停下来」的信息，前端那份列表可能已经过时了。
-async function stopAllForUpdate(): Promise<string[]> {
+//
+// 整个调用失败时，原因是另一回事（不是「某几条停不掉」），
+// 单独放在 error 里，别混进会话名里显示成一句莫名其妙的话。
+async function stopAllForUpdate(): Promise<{ failed: string[]; error?: string }> {
   try {
     await stopAllSessions()
   } catch (error) {
-    return [String(error)]
+    return { failed: [], error: String(error) }
   }
   await load()
-  return []
+  return { failed: [] }
 }
 
 // —— 快捷键 ——
@@ -818,44 +1038,30 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="flex-1"></div>
-
-      <UIconMenu
-        :model-value="locale"
-        :options="localeOptions"
-        :label="t('app.language')"
-        @update:model-value="changeLocale"
+      <!-- 标签条。放顶栏而不是下面那条会话栏：会话栏要留 Running/Start/Stop
+           的固定位置，标签挤进去会把它们推得来回动。
+           默认只有「收起了会话栏」这一版才有标签；展开时下面那排列表就够了
+           （设置里可以把「展开也显示」打开）。 -->
+      <SessionTabs
+        v-if="tabsVisible"
+        :tabs="tabs"
+        :current-id="selectedId"
+        class="min-w-0 flex-1"
+        @select="select"
+        @reorder="onTabsReorder"
       />
+      <div v-else class="flex-1"></div>
 
-      <!-- 「登录时启动」放在主题按钮左边、用开关而不是图标（图标那个 →| 看不出是什么）。
-           它原来被放在顶栏最左边的搜索框前面，把搜索框往右顶了约 200px，
-           搜索框左边缘就跟下面的 SESSIONS 栏对不上了（2026-09-28 学习者指出）。 -->
-      <UTooltip :content="t('app.startOnBootHint')">
-        <label
-          class="flex flex-none cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors duration-100 hover:bg-raised"
-        >
-          <span class="text-[11px] whitespace-nowrap text-ink-dim">{{ t('app.startOnBoot') }}</span>
-          <USwitch
-            :model-value="settings.startOnBoot"
-            :disabled="startOnBootBusy"
-            @update:model-value="toggleStartOnBoot"
-          />
-        </label>
-      </UTooltip>
+      <div class="mx-0.5 h-5 w-px bg-line"></div>
 
-      <!-- 主题菜单底下挂「终端背景色…」：改的是**全局默认**，
-           会话工具条里那个改的是**这一条**。两层分开存、后者盖前者 ——
-           单独改过的那几条不受全局影响，全局改完没单独改过的跟着变。 -->
+      <!-- 主题：常用的留在这儿，点一下就切明暗。
+           终端背景色那种「改一次就不动」的，收进设置的外观里。 -->
       <UIconMenu
         :model-value="themeMode"
         :options="themeOptions"
         :label="t('theme.label')"
-        :action="{ label: t('theme.terminalBackground'), icon: 'pipette' }"
         @update:model-value="changeTheme"
-        @action="appColorOpen = true"
       />
-
-      <div class="mx-0.5 h-5 w-px bg-line"></div>
 
       <!-- 提示写清楚「刷新的是什么」：光一个循环箭头看不出来，
            而且点下去立刻没反应 = 点了跟没点一样，所以图标在读的时候转起来 -->
@@ -870,66 +1076,26 @@ onBeforeUnmount(() => {
           @click="refresh"
         />
       </UTooltip>
-      <UTooltip :content="t('app.quitHint')">
-        <UButton
-          variant="ghost"
-          size="sm"
-          square
-          icon="power"
-          :aria-label="t('app.quitHint')"
-          @click="quit"
-        />
-      </UTooltip>
 
-      <div class="mx-0.5 h-5 w-px bg-line"></div>
-
-      <!-- 远程接管：一个可开可关的可选功能，默认关着。
-           开着的时候状态点会亮，一眼能看出手机在不在线。
-           图标用链环不用地球：左边那个语言切换已经是地球了。 -->
-      <UTooltip :content="t('remote.title')">
-        <UButton
-          variant="ghost"
-          size="sm"
-          square
-          icon="link"
-          :aria-label="t('remote.title')"
-          :class="remoteStatus?.state === 'connected' && 'text-pos'"
-          @click="remoteOpen = true"
-        />
-      </UTooltip>
-
-      <!-- 「关于这个 app」跟仓库链接归成一组：两个都是「关于这个程序本身」，
-           不是「操作 app」。组内从左到右是「看信息 → 去看源码」 -->
-      <!-- 有新版本时这个按钮左上角点一个小圆点。不做成弹窗是因为
-           D58 定的是「一次性轻提示 + 常驻圆点」，模态框会打断手上在做的事 -->
-      <UTooltip :content="t('app.info')">
+      <!-- 其余的都收进设置：语言、开机自启、远程接管、关于、仓库、退出。
+           顶栏只留「一天要按好几次」的 —— 每加一个功能就再挤一个图标进来，
+           挤到最后谁也不记得哪个在哪儿。
+           有新版本时齿轮右上角挂一个点，跟原来 info 按钮的做法一致。 -->
+      <UTooltip :content="t('app.settings')">
         <div class="relative">
           <UButton
             variant="ghost"
             size="sm"
             square
-            icon="info"
-            :aria-label="t('app.info')"
-            @click="appInfoOpen = true"
+            icon="cog"
+            :aria-label="t('app.settings')"
+            @click="settingsOpen = true"
           />
           <span
             v-if="hasUpdate"
             class="pointer-events-none absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-accent ring-2 ring-surface"
           />
         </div>
-      </UTooltip>
-
-      <!-- 仓库链接排在最右、单独隔一条线：它是「离开这个 app」的动作，
-           跟左边那排操作 app 的按钮不是一类，混在里面用户会当成某个设置 -->
-      <UTooltip :content="t('app.repository')">
-        <UButton
-          variant="ghost"
-          size="sm"
-          square
-          icon="github"
-          :aria-label="t('app.repository')"
-          @click="openRepository"
-        />
       </UTooltip>
     </header>
 
@@ -1057,62 +1223,116 @@ onBeforeUnmount(() => {
           <!-- 配置：默认收起来，主要看的是终端 -->
           <div
             v-if="configOpen"
-            class="grid flex-none grid-cols-2 gap-x-8 gap-y-2.5 border-b border-line bg-sunken/50 px-4 py-3"
+            class="flex-none border-b border-line bg-sunken/50"
           >
-            <div>
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.kind') }}
+            <div class="grid grid-cols-2 gap-x-8 gap-y-2.5 px-4 py-3">
+              <div>
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.kind') }}
+                </div>
+                <div class="mt-0.5 font-mono text-xs text-ink">
+                  {{ t(`kind.${selected.config.kind}`) }}
+                </div>
               </div>
-              <div class="mt-0.5 font-mono text-xs text-ink">
-                {{ t(`kind.${selected.config.kind}`) }}
+              <div>
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.mode') }}
+                </div>
+                <div class="mt-0.5 font-mono text-xs text-ink">
+                  {{ selected.config.mode }} / {{ selected.config.encoding }}
+                </div>
+              </div>
+              <div>
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.size') }}
+                </div>
+                <div class="mt-0.5 font-mono text-xs text-ink tabular-nums">
+                  {{ selected.config.cols }} × {{ selected.config.rows }}
+                </div>
+              </div>
+              <div>
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.autoStart') }}
+                </div>
+                <div class="mt-0.5 font-mono text-xs text-ink">
+                  {{ selected.config.autoStart ? '✓' : '—' }}
+                </div>
+              </div>
+              <div class="col-span-2">
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.target') }}
+                </div>
+                <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
+                  {{ selected.config.target }}
+                </div>
+              </div>
+              <div class="col-span-2">
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.args') }}
+                </div>
+                <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
+                  {{ selected.config.args || t('detail.none') }}
+                </div>
+              </div>
+              <div class="col-span-2">
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.workDir') }}
+                </div>
+                <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
+                  {{ selected.config.workDir || t('detail.none') }}
+                </div>
+              </div>
+              <div class="col-span-2">
+                <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                  {{ t('detail.env') }}
+                </div>
+                <div
+                  data-selectable
+                  class="mt-0.5 font-mono text-xs break-all whitespace-pre-line text-ink"
+                >
+                  {{ selected.config.env?.length ? selected.config.env.join('\n') : t('detail.none') }}
+                </div>
               </div>
             </div>
-            <div>
+
+            <!-- 运行时：这条会话什么时候起来的、跑到哪儿了、对应哪个进程 -->
+            <div class="border-t border-line px-4 py-3">
               <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.mode') }}
+                {{ t('detail.runtime') }}
               </div>
-              <div class="mt-0.5 font-mono text-xs text-ink">
-                {{ selected.config.mode }} / {{ selected.config.encoding }}
-              </div>
-            </div>
-            <div>
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.size') }}
-              </div>
-              <div class="mt-0.5 font-mono text-xs text-ink tabular-nums">
-                {{ selected.config.cols }} × {{ selected.config.rows }}
-              </div>
-            </div>
-            <div>
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.autoStart') }}
-              </div>
-              <div class="mt-0.5 font-mono text-xs text-ink">
-                {{ selected.config.autoStart ? '✓' : '—' }}
-              </div>
-            </div>
-            <div class="col-span-2">
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.target') }}
-              </div>
-              <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
-                {{ selected.config.target }}
-              </div>
-            </div>
-            <div class="col-span-2">
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.args') }}
-              </div>
-              <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
-                {{ selected.config.args || t('detail.none') }}
-              </div>
-            </div>
-            <div class="col-span-2">
-              <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
-                {{ t('detail.workDir') }}
-              </div>
-              <div data-selectable class="mt-0.5 font-mono text-xs break-all text-ink">
-                {{ selected.config.workDir || t('detail.none') }}
+              <div class="mt-1.5 grid grid-cols-2 gap-x-8 gap-y-2.5">
+                <div>
+                  <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                    {{ t('detail.startedAt') }}
+                  </div>
+                  <div class="mt-0.5 font-mono text-xs text-ink">
+                    {{ runtimeInfo.started }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                    {{ t('detail.endedAt') }}
+                  </div>
+                  <div class="mt-0.5 font-mono text-xs text-ink">
+                    {{ runtimeInfo.ended }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                    {{ t('detail.duration') }}
+                  </div>
+                  <div class="mt-0.5 font-mono text-xs text-ink tabular-nums">
+                    {{ runtimeInfo.duration }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-[10.5px] tracking-wide text-ink-faint uppercase">
+                    {{ t('detail.pid') }}
+                  </div>
+                  <div class="mt-0.5 font-mono text-xs text-ink tabular-nums">
+                    {{ runtimeInfo.pid }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1202,6 +1422,30 @@ onBeforeUnmount(() => {
       :status="remoteStatus"
       :saving="remoteSaving"
       @save="saveRemoteConfig"
+    />
+
+    <!-- 设置：顶栏那排按钮里「改一次就不动」的都挪到这儿。
+         左栏选一项、右栏只显示那一项，不做「一页滚到底」。 -->
+    <SettingsDialog
+      v-model="settingsOpen"
+      :settings="settings"
+      :locale="locale"
+      :theme-mode="themeMode"
+      :always-tabs="alwaysTabs"
+      :start-on-boot-busy="startOnBootBusy"
+      :remote-enabled="settings.remote.enabled"
+      :remote-state="remoteStatus?.state || 'disabled'"
+      :has-update="hasUpdate"
+      @update:always-tabs="setAlwaysTabs"
+      @locale="changeLocale"
+      @theme="changeTheme"
+      @start-on-boot="toggleStartOnBoot"
+      @feature="setFeature"
+      @open-remote="remoteOpen = true"
+      @open-about="appInfoOpen = true"
+      @open-background="appColorOpen = true"
+      @open-repo="openRepository"
+      @quit="quit"
     />
   </div>
 </template>

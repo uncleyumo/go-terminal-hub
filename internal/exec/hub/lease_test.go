@@ -34,6 +34,7 @@ func (f *fakeExecutor) KillProcess() error   { return nil }
 func (f *fakeExecutor) GetLaunchSpec() executor.LaunchSpec {
 	return executor.LaunchSpec{}
 }
+func (f *fakeExecutor) Pid() int { return 0 }
 
 // newLeaseTestHub 造一个只有一条记录、还没启动进程的 Hub。
 func newLeaseTestHub(id string, cols, rows uint16) (*Hub, *fakeExecutor) {

@@ -37,6 +37,18 @@
 }
 
 /*
+ * 量「最终布局」用的：收起会话栏那一下要先把布局一步做到位、量出顶栏标签的
+ * 落点，再退回原样让过渡从头跑。不关掉过渡，量到的是动画途中的位置。
+ * 只在那一瞬间加上，量完立刻摘掉。
+ */
+html.no-anim *,
+html.no-anim *::before,
+html.no-anim *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/*
  * 两套配色，唯一真源。
  *
  * 🔴 --c-accent-solid 为什么是**另一个**颜色：

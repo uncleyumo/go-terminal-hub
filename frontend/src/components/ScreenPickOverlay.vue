@@ -89,11 +89,17 @@ const loupeStyle = computed(() => {
 })
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('cancel')
+  if (e.key !== 'Escape') return
+  // 捕获阶段就拦下来。
+  //
+  // 外面那个弹框（选颜色那个）也在 window 上听 Esc，冒泡阶段它会先一步
+  // 把整个弹框关掉——用户只想取消这一次取色，结果连弹框都没了。
+  e.stopPropagation()
+  emit('cancel')
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKey)
+  window.addEventListener('keydown', onKey, true)
   const img = imgEl.value
   if (!img) return
   const prepare = () => {
@@ -106,7 +112,7 @@ onMounted(() => {
   else img.addEventListener('load', prepare, { once: true })
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 </script>
 
 <template>

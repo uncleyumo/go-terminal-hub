@@ -17,7 +17,11 @@ const TONE: Record<ToastKind, string> = {
 
 <template>
   <Teleport to="body">
-    <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
+    <div
+      aria-live="polite"
+      aria-atomic="false"
+      class="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2"
+    >
       <TransitionGroup
         enter-active-class="transition duration-200 ease-out"
         enter-from-class="opacity-0 translate-x-4"
@@ -28,7 +32,7 @@ const TONE: Record<ToastKind, string> = {
         <div
           v-for="item in toasts"
           :key="item.id"
-          role="status"
+          :role="item.kind === 'error' ? 'alert' : 'status'"
           class="pointer-events-auto flex max-w-[380px] items-start gap-2.5 rounded-lg border border-line-strong bg-overlay py-2.5 pr-2.5 pl-3 shadow-xl shadow-black/30"
         >
           <UIcon :name="ICON[item.kind]" :size="15" class="mt-px" :class="TONE[item.kind]" />

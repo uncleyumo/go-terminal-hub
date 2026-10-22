@@ -63,8 +63,7 @@ type bridge struct {
 	cursor    uint64
 	cancelSub func()
 
-	autoTakeover  bool
-	browserOnline bool
+	autoTakeover bool
 
 	// notify 是容量 1 的信号通道：满了就丢，因为读协程下一轮一定会读到最新数据。
 	notify chan struct{}
@@ -250,9 +249,11 @@ func (b *bridge) handleControl(data []byte) {
 	case protocol.TypeUpload:
 		b.upload(m)
 	case protocol.TypeBrowserOnline:
-		b.browserOnline = true
+		// 记到 agent 上，桌面界面才知道「远程端有人连着」。
+		b.agent.setBrowserOnline(true)
 		b.sendList()
 	case protocol.TypeBrowserOffline:
+		b.agent.setBrowserOnline(false)
 		// 浏览器走了，没人能控制了：把所有 web 租约还给桌面。
 		// 少了这一步，桌面会永远卡在旁观模式。
 		b.releaseAllWebLeases()

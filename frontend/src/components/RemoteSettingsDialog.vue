@@ -190,10 +190,19 @@ function onSave() {
         {{ t('remote.warning') }}
       </div>
 
-      <label class="flex items-center gap-3">
-        <USwitch :model-value="draft.enabled" @update:model-value="draft.enabled = $event" />
-        <span>{{ t('remote.enable') }}</span>
-      </label>
+      <!-- 不用 label 包开关：label 是给表单控件用的，包在 role="switch" 的
+           button 外面，读屏软件读不到开关的名字。改成 aria-labelledby
+           指向这段文字，名字还是这段文字。 -->
+      <div class="flex items-center gap-3">
+        <USwitch
+          :model-value="draft.enabled"
+          aria-labelledby="remoteEnableLabel"
+          @update:model-value="draft.enabled = $event"
+        />
+        <span id="remoteEnableLabel" class="cursor-pointer" @click="draft.enabled = !draft.enabled">
+          {{ t('remote.enable') }}
+        </span>
+      </div>
 
       <div v-if="needsConnection" class="space-y-3">
         <div>
@@ -261,13 +270,20 @@ function onSave() {
           </span>
         </div>
 
-        <label class="flex items-center gap-3">
+        <div class="flex items-center gap-3">
           <USwitch
             :model-value="draft.autoTakeover"
+            aria-labelledby="remoteAutoTakeoverLabel"
             @update:model-value="draft.autoTakeover = $event"
           />
-          <span>{{ t('remote.autoTakeover') }}</span>
-        </label>
+          <span
+            id="remoteAutoTakeoverLabel"
+            class="cursor-pointer"
+            @click="draft.autoTakeover = !draft.autoTakeover"
+          >
+            {{ t('remote.autoTakeover') }}
+          </span>
+        </div>
         <div class="text-[11px] leading-4 text-ink-faint">{{ t('remote.autoTakeoverHint') }}</div>
 
         <div class="flex items-center gap-2 border-t border-line pt-3 text-xs">

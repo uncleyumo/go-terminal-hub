@@ -179,5 +179,20 @@ func (c *ConPTYExecutor) GetLaunchSpec() executor.LaunchSpec {
 	return ls
 }
 
+// Pid 返回 ConPTY 起的那个 cmd.exe 的进程号。
+//
+// go-pty 在 Start 之后把 os.Process 挂在 Cmd 上（cmd_windows.go 里
+// os.FindProcess(pi.ProcessId)），所以这里直接读它的 Pid。
+// 没起来或者句柄已经收走时返回 0。
+func (c *ConPTYExecutor) Pid() int {
+	c.mu.Lock()
+	cmd := c.cmd
+	c.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return 0
+	}
+	return cmd.Process.Pid
+}
+
 // 检查 ConPTYExecutor 是否实现了 Executor 接口
 var _ executor.Executor = (*ConPTYExecutor)(nil)

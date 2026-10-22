@@ -126,22 +126,22 @@ export function prefersDarkText(background: string): boolean {
  *
  * - `foreground` / `cursor`：跟着背景亮暗翻，深底浅字、浅底深字。
  * - `cursorAccent`：光标是一块实心的，它底下那个字符要能看见 —— 所以取背景色本身。
- * - `selectionBackground`：背景色的半透明版。选中的时候是盖在原文上的一层色，
- *   用半透明就不用管底下是深是浅，也不用另外调一个值。
+ * - `selectionBackground`：跟文字反着来的一层薄底 —— 深底垫白、浅底垫黑。
+ *   **不能拿背景色本身**：盖在同色背景上等于没变，选中的字看着一点反应都没有
+ *   （2026-10-22 学习者报的「cmd 里框选没反应」，其实选中了，只是看不见）。
  * - **ANSI 十六色不动**：那是输出自身的颜色，用户没要求改就别改（D48）。
  *   哪一套亮、哪一套暗由 `base` 决定，调用方按背景色挑好传进来。
  */
 export function withBackground(base: ITheme, background: string): ITheme {
   const darkText = prefersDarkText(background)
   const foreground = darkText ? DARK_TEXT : LIGHT_TEXT
-  const { r, g, b } = hexToRgb(background)
   return {
     ...base,
     background,
     foreground,
     cursor: foreground,
     cursorAccent: background,
-    selectionBackground: `rgba(${r}, ${g}, ${b}, 0.32)`,
+    selectionBackground: darkText ? 'rgba(0, 0, 0, 0.22)' : 'rgba(255, 255, 255, 0.26)',
   }
 }
 

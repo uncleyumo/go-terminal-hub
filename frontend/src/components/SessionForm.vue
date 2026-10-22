@@ -356,7 +356,9 @@ async function submit() {
     visible.value = false
     emit('saved')
   } catch (error) {
-    notify.error(String(error))
+    // 后端那句英文是给排查用的，用户看不懂。
+    // 先给一句「没保存成」，底下再挂原文方便查。
+    notify.error(`${t('msg.saveFailed')}: ${String(error)}`)
   } finally {
     saving.value = false
   }

@@ -2,12 +2,13 @@
 // 顶层编排：登录 → 会话列表 → 终端，三个界面用 v-if 切，不引路由。
 //
 // 协议状态（控制方是谁、PTY 多大）都在这里，终端组件只负责渲染和量尺寸。
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
 import { HubClient, type ConnectionState, type ControlMessage, type SessionInfo } from './api'
 import LoginView from './components/LoginView.vue'
 import SessionList from './components/SessionList.vue'
 import TerminalView from './components/TerminalView.vue'
 import { resetAutoCredentials } from './token'
+import { THEME_PRESETS, applyChrome, loadThemeId, saveThemeId, themeById } from './theme'
 
 type View = 'login' | 'list' | 'terminal'
 
@@ -267,7 +268,12 @@ function onVisibilityChange() {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
+  document.addEventListener('pointerdown', onDocPointer)
   window.addEventListener('popstate', onPopState)
+  window.visualViewport?.addEventListener('resize', onViewportResize)
+  onViewportResize()
+  // 页面外壳的亮暗跟着配色走
+  applyChrome(themePreset.value)
   // 先问一句 cookie 还有效吗。直接连 WebSocket 的话，未登录只会得到一个
   // 语焉不详的握手失败，用户看不到「该输令牌了」。
   const res = await fetch('/api/me').catch(() => null)
@@ -287,7 +293,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  document.removeEventListener('pointerdown', onDocPointer)
   window.removeEventListener('popstate', onPopState)
+  window.visualViewport?.removeEventListener('resize', onViewportResize)
   client.value?.close()
 })
 
@@ -295,6 +303,79 @@ function onLoginSuccess() {
   view.value = 'list'
   startClient()
 }
+
+// —— 配色 ——
+//
+// 移植自桌面端的终端主题控制。这里不做会话级隔离：整个网页端一套配色，
+// 换会话不换色。选的哪套记在这台设备的浏览器里。
+const themeId = ref(loadThemeId())
+const themePreset = computed(() => themeById(themeId.value))
+const themeMenuOpen = ref(false)
+const themeWrap = useTemplateRef<HTMLDivElement>('themeWrap')
+
+function selectTheme(id: string) {
+  themeId.value = id
+  saveThemeId(id)
+  applyChrome(themeById(id))
+  themeMenuOpen.value = false
+}
+
+// 点外面就收起菜单。不收的话它一直挡着顶栏。
+function onDocPointer(e: PointerEvent) {
+  if (!themeMenuOpen.value) return
+  const el = themeWrap.value
+  if (el && !el.contains(e.target as Node)) themeMenuOpen.value = false
+}
+
+// —— 提取当前视口的内容 ——
+//
+// 手机上没法划屏选文字，想拿走一段输出只能靠眼睛抄。
+// 这里把眼前这一屏取出来，放进一个能改的框里：想留哪几行留哪几行，
+// 改完再复制。
+const extractOpen = ref(false)
+const extractText = ref('')
+const extractHint = ref('')
+const extractArea = useTemplateRef<HTMLTextAreaElement>('extractArea')
+
+function openExtract() {
+  extractText.value = termRef.value?.readViewport() ?? ''
+  extractHint.value = ''
+  extractOpen.value = true
+}
+
+async function copyExtract() {
+  const text = extractText.value
+  if (!text.trim()) {
+    extractHint.value = '这里没有内容'
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    extractHint.value = '已复制'
+  } catch {
+    // 剪贴板不给写（不是安全上下文、或者浏览器不给这个权限）：
+    // 至少把内容全选上，手机上长按就能复制，电脑上按 Ctrl+C。
+    extractArea.value?.select()
+    extractHint.value = '已全选：长按（手机）或 Ctrl+C（电脑）复制'
+  }
+}
+
+// —— 键盘弹出来时的可见高度 ——
+//
+// dvh 在 Android 上**不跟着软键盘变**（iOS 变）。键盘一弹出来，
+// 屏幕下半截被盖住，弹窗要是还按 dvh 算，底下的「复制」按钮就按不到了。
+// visualViewport 报的是「现在真正看得见多少」，按它收才靠谱。
+const visibleHeight = ref(0)
+
+function onViewportResize() {
+  visibleHeight.value = window.visualViewport?.height ?? 0
+}
+
+const extractModalStyle = computed(() => {
+  const h = visibleHeight.value
+  if (!h) return {}
+  return { maxHeight: `${Math.max(240, h - 32)}px` }
+})
 </script>
 
 <template>
@@ -311,6 +392,25 @@ function onLoginSuccess() {
       <span v-if="view === 'terminal'" class="dim" style="font-size: 12px">
         {{ controller === 'web' ? '控制中' : '旁观' }}
       </span>
+
+      <!-- 取走眼前这一屏。放在顶栏而不是终端那排按钮里：
+           那排按钮高度是钉死的、宽度不换行，再塞一个会把「交还控制」挤出屏幕。 -->
+      <button v-if="view === 'terminal'" class="btn" @click="openExtract">提取</button>
+
+      <div ref="themeWrap" class="theme-wrap">
+        <button class="btn" @click="themeMenuOpen = !themeMenuOpen">主题</button>
+        <div v-if="themeMenuOpen" class="theme-menu">
+          <button
+            v-for="p in THEME_PRESETS"
+            :key="p.id"
+            class="theme-item"
+            :class="{ active: p.id === themeId }"
+            @click="selectTheme(p.id)"
+          >
+            {{ p.label }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 同一个账号只允许一个浏览器在线。被顶掉时要说清「为什么断」和
@@ -354,8 +454,116 @@ function onLoginSuccess() {
       :size="size"
       :client="client"
       :connected="connected()"
+      :theme="themePreset.terminal"
       @takeover="client.takeover()"
       @release="client.release()"
     />
+
+    <!-- 提取出来的内容。整页遮罩，跟会话列表里那个确认框同一套做法：
+         原生弹窗在手机浏览器里样式不受控，长按选字的手势还会跟它打架。 -->
+    <div v-if="extractOpen" class="modal-mask" @click.self="extractOpen = false">
+      <div class="modal extract-modal" :style="extractModalStyle">
+        <div class="modal-title">当前视口的内容</div>
+        <p class="dim modal-body">
+          下面是终端里现在看得见的那几行。可以直接改、删，满意了再复制。
+        </p>
+        <textarea
+          ref="extractArea"
+          v-model="extractText"
+          class="extract-area"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+        ></textarea>
+        <div v-if="extractHint" class="extract-hint">{{ extractHint }}</div>
+        <div class="modal-actions">
+          <button class="btn" @click="extractOpen = false">关闭</button>
+          <button class="btn primary" @click="copyExtract">复制</button>
+        </div>
+      </div>
+    </div>
   </template>
 </template>
+
+<style scoped>
+/* 主题菜单：挂在按钮底下，不占顶栏的布局高度。 */
+.theme-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.theme-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  min-width: 170px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-item {
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.theme-item:hover {
+  background: var(--btn-active);
+}
+
+.theme-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 提取内容那个框：手机上占满可用高度，电脑上居中一块。
+   高度用 dvh，并且跟着「现在真正看得见多少」再收一档——
+   键盘弹出来时（Android 上 dvh 不跟着变），底下的「复制」按钮不能被盖住。 */
+.extract-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 84dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.extract-area {
+  width: 100%;
+  /* 键盘弹出来时还能剩一点高度，不至于压成一条缝 */
+  min-height: 60px;
+  height: 32dvh;
+  flex: 1 1 auto;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Cascadia Mono', Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
+  /* iOS 上小于 16px 会自动放大页面，输入框一聚焦整页就跟着缩放 */
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .extract-area {
+    font-size: 13px;
+  }
+}
+
+.extract-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent);
+}
+</style>
