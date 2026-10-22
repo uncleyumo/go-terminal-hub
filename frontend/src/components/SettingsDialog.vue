@@ -36,12 +36,14 @@ const emit = defineEmits<{
   openAbout: []
   openBackground: []
   openRepo: []
-  quit: []
+  /** 打开更新弹窗。状态和动作都在 App.vue 那边，这里只负责指路。 */
+  openUpdate: []
 }>()
 
 const { t } = useI18n()
 
-const SECTIONS = ['general', 'appearance', 'remote', 'features', 'about'] as const
+// 「更新」单独一栏：它是「这个 app 现在是不是最新」，跟「这个 app 是谁」不是一件事。
+const SECTIONS = ['general', 'appearance', 'remote', 'features', 'update', 'about'] as const
 type Section = (typeof SECTIONS)[number]
 const active = ref<Section>('general')
 
@@ -233,16 +235,36 @@ function onFeature(id: string, on: boolean) {
           </div>
         </template>
 
-        <!-- 关于与更新 -->
+        <!-- 更新 -->
+        <template v-else-if="active === 'update'">
+          <p class="mb-2 text-[11.5px] text-ink-faint">{{ t('settings.updateHint') }}</p>
+
+          <div class="flex items-center gap-3 border-t border-line py-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-[12.5px] text-ink">{{ t('update.title') }}</div>
+              <div class="text-[11.5px] text-ink-faint">
+                {{ hasUpdate ? t('settings.updateAvailable') : t('settings.updateIdle') }}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="flex flex-none items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-ink-dim transition-colors hover:bg-raised hover:text-ink"
+              @click="emit('openUpdate')"
+            >
+              <UIcon name="refresh" :size="13" />
+              {{ t('update.checkButton') }}
+            </button>
+          </div>
+        </template>
+
+        <!-- 关于 -->
         <template v-else>
           <p class="mb-2 text-[11.5px] text-ink-faint">{{ t('settings.aboutHint') }}</p>
 
           <div class="flex items-center gap-3 border-t border-line py-3">
             <div class="min-w-0 flex-1">
               <div class="text-[12.5px] text-ink">{{ t('app.info') }}</div>
-              <div class="text-[11.5px] text-ink-faint">
-                {{ hasUpdate ? t('settings.updateAvailable') : t('settings.aboutHint') }}
-              </div>
+              <div class="text-[11.5px] text-ink-faint">{{ t('settings.infoHint') }}</div>
             </div>
             <button
               type="button"
@@ -268,19 +290,6 @@ function onFeature(id: string, on: boolean) {
             </button>
           </div>
 
-          <div class="flex items-center gap-3 border-t border-line py-3">
-            <div class="min-w-0 flex-1">
-              <div class="text-[12.5px] text-ink">{{ t('app.quitHint') }}</div>
-            </div>
-            <button
-              type="button"
-              class="flex flex-none items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-neg transition-colors hover:bg-raised"
-              @click="emit('quit')"
-            >
-              <UIcon name="power" :size="13" />
-              {{ t('settings.quit') }}
-            </button>
-          </div>
         </template>
       </div>
     </div>

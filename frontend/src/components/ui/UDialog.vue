@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import UIcon from './UIcon.vue'
 import { confirmState } from './confirm'
 import { captureFocus, focusInto, trapFocus } from './focus'
@@ -30,9 +30,15 @@ let restoreFocus: (() => void) | null = null
 
 // 叠着开的弹窗（设置里再点「远程访问」这类）。Esc 和 Tab 只归最上面那一层管：
 // 不排这个队的话，一按 Esc 会把两层一起关掉 —— 用户想的是「退回设置」。
-const dialogStack: symbol[] = []
+const dialogStack = reactive<symbol[]>([])
 const dialogId = Symbol('dialog')
 const isTopmost = () => dialogStack[dialogStack.length - 1] === dialogId
+
+// 叠着开的时候按打开顺序排层，不能只靠先后顺序：
+// 所有弹窗都 Teleport 到 body，而 Teleport 的先后由组件写在模板里的位置决定，
+// 不按用户点的先后 —— 从设置里再开「关于」，关于会盖在设置底下。
+// 40 起步、第几层就 +几，始终低于确认框和提示条的 50。
+const zIndex = computed(() => 40 + Math.max(0, dialogStack.indexOf(dialogId)))
 
 function close() {
   emit('update:modelValue', false)
@@ -95,7 +101,8 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-6 backdrop-blur-[2px]"
+        class="fixed inset-0 flex items-center justify-center bg-black/50 p-6 backdrop-blur-[2px]"
+        :style="{ zIndex }"
         @mousedown.self="close"
       >
         <Transition

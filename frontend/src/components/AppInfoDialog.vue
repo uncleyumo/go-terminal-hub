@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// 「关于这个 app」弹窗。顶栏 GitHub 图标左边那个 info 按钮打开。
+// 「关于这个 app」弹窗。顶栏那个 info 按钮打开。
+//
+// 这里只放「这个 app 是谁、装在哪」—— 检查更新在设置的「更新」栏里，
+// 不挂在这个弹窗脚下：两件事的开关不在同一处，才会被当成同一个东西。
 //
 // 版本号和构建时间由后端给（AppService.GetBuildInfo），不是编译进前端的：
 // 链接器在 go build 时把 build/windows/Taskfile.yml 里算出来的两个值用 -X
@@ -24,11 +27,7 @@ import {
 import brandIcon from '../assets/brand/icon.svg'
 
 const props = defineProps<{ modelValue: boolean }>()
-const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
-  /** 交给 App.vue：关掉这个弹窗、打开更新弹窗（状态和动作都在那边）。 */
-  'check-update': []
-}>()
+const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
 const { t } = useI18n()
 
@@ -218,15 +217,6 @@ function openExeFolder() {
     </p>
 
     <template #footer>
-      <UButton
-        variant="ghost"
-        size="sm"
-        icon="refresh"
-        class="mr-auto"
-        @click="emit('check-update')"
-      >
-        {{ t('update.checkButton') }}
-      </UButton>
       <UButton variant="default" size="sm" @click="emit('update:modelValue', false)">
         {{ t('action.close') }}
       </UButton>

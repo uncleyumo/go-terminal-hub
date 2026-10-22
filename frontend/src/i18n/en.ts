@@ -177,7 +177,8 @@ export default {
       appearance: 'Appearance',
       remote: 'Remote access',
       features: 'Features',
-      about: 'About & updates',
+      update: 'Updates',
+      about: 'About',
     },
     generalHint: 'How this machine runs the app.',
     languageHint: 'Takes effect right away.',
@@ -188,10 +189,12 @@ export default {
     remoteOff: 'Off',
     featuresHint:
       'A feature that is off is not loaded and shows no entry point. New features show up here.',
-    aboutHint: 'Version, updates and the repository.',
+    updateHint: 'Check for a new version; download it here and it applies after a restart.',
+    updateIdle: 'Not checked yet — use the button on the right',
+    aboutHint: 'Who made this app and where the code lives.',
+    infoHint: 'Version, build time, contact, image cache',
     open: 'Open',
     updateAvailable: 'An update is available',
-    quit: 'Quit app',
   },
   feature: {
     sessionTabs: {

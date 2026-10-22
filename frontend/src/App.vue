@@ -1077,7 +1077,19 @@ onBeforeUnmount(() => {
         />
       </UTooltip>
 
-      <!-- 其余的都收进设置：语言、开机自启、远程接管、关于、仓库、退出。
+      <!-- 应用信息：版本、作者、图片缓存。跟刷新一样常用，不该埋进设置里翻三层。 -->
+      <UTooltip :content="t('app.info')">
+        <UButton
+          variant="ghost"
+          size="sm"
+          square
+          icon="info"
+          :aria-label="t('app.info')"
+          @click="appInfoOpen = true"
+        />
+      </UTooltip>
+
+      <!-- 其余的都收进设置：语言、开机自启、远程接管、仓库、终端底色。
            顶栏只留「一天要按好几次」的 —— 每加一个功能就再挤一个图标进来，
            挤到最后谁也不记得哪个在哪儿。
            有新版本时齿轮右上角挂一个点，跟原来 info 按钮的做法一致。 -->
@@ -1096,6 +1108,21 @@ onBeforeUnmount(() => {
             class="pointer-events-none absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-accent ring-2 ring-surface"
           />
         </div>
+      </UTooltip>
+
+      <div class="mx-0.5 h-5 w-px bg-line"></div>
+
+      <!-- 退出：收在最右、用 danger 色，别跟常用按钮混在一起误点。
+           有会话在跑时 quit() 会先确认，这里不用自己拦。 -->
+      <UTooltip :content="t('app.quitHint')">
+        <UButton
+          variant="danger"
+          size="sm"
+          square
+          icon="power"
+          :aria-label="t('app.quitHint')"
+          @click="quit"
+        />
       </UTooltip>
     </header>
 
@@ -1406,10 +1433,7 @@ onBeforeUnmount(() => {
         </UButton>
       </template>
     </UDialog>
-    <AppInfoDialog
-      v-model="appInfoOpen"
-      @check-update="appInfoOpen = false; openUpdateDialog()"
-    />
+    <AppInfoDialog v-model="appInfoOpen" />
     <UpdateDialog
       v-model="updateOpen"
       :state="updateState"
@@ -1445,7 +1469,7 @@ onBeforeUnmount(() => {
       @open-about="appInfoOpen = true"
       @open-background="appColorOpen = true"
       @open-repo="openRepository"
-      @quit="quit"
+      @open-update="settingsOpen = false; openUpdateDialog()"
     />
   </div>
 </template>
