@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import UIcon from './UIcon.vue'
 import { confirmState } from './confirm'
+import { dialogDepth, dialogIsTopmost, popDialog, pushDialog } from './dialogStack'
 import { captureFocus, focusInto, trapFocus } from './focus'
 
 const props = withDefaults(
@@ -30,15 +31,15 @@ let restoreFocus: (() => void) | null = null
 
 // 叠着开的弹窗（设置里再点「远程访问」这类）。Esc 和 Tab 只归最上面那一层管：
 // 不排这个队的话，一按 Esc 会把两层一起关掉 —— 用户想的是「退回设置」。
-const dialogStack = reactive<symbol[]>([])
 const dialogId = Symbol('dialog')
-const isTopmost = () => dialogStack[dialogStack.length - 1] === dialogId
+const isTopmost = () => dialogIsTopmost(dialogId)
 
 // 叠着开的时候按打开顺序排层，不能只靠先后顺序：
 // 所有弹窗都 Teleport 到 body，而 Teleport 的先后由组件写在模板里的位置决定，
 // 不按用户点的先后 —— 从设置里再开「关于」，关于会盖在设置底下。
 // 40 起步、第几层就 +几，始终低于确认框和提示条的 50。
-const zIndex = computed(() => 40 + Math.max(0, dialogStack.indexOf(dialogId)))
+// 打开顺序存在模块级的 dialogStack 里，各层看到的是同一份。
+const zIndex = computed(() => 40 + Math.max(0, dialogDepth(dialogId)))
 
 function close() {
   emit('update:modelValue', false)
@@ -62,7 +63,7 @@ watch(
   () => props.modelValue,
   (open) => {
     if (open) {
-      dialogStack.push(dialogId)
+      pushDialog(dialogId)
       window.addEventListener('keydown', onKeydown)
       // 焦点挪进弹框；关的时候还回去
       restoreFocus = captureFocus()
@@ -72,8 +73,7 @@ watch(
         if (panel.value) focusInto(panel.value, body.value)
       })
     } else {
-      const at = dialogStack.indexOf(dialogId)
-      if (at >= 0) dialogStack.splice(at, 1)
+      popDialog(dialogId)
       window.removeEventListener('keydown', onKeydown)
       restoreFocus?.()
       restoreFocus = null
@@ -83,8 +83,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  const at = dialogStack.indexOf(dialogId)
-  if (at >= 0) dialogStack.splice(at, 1)
+  popDialog(dialogId)
   window.removeEventListener('keydown', onKeydown)
   restoreFocus?.()
   restoreFocus = null

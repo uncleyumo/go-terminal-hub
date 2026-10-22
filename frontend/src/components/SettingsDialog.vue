@@ -219,18 +219,29 @@ function onFeature(id: string, on: boolean) {
               />
             </div>
 
-            <div
-              v-if="f.id === 'sessionTabs' && featureOn(settings, f.id)"
-              class="flex items-center gap-3 border-t border-line/60 py-3 pl-3"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="text-[12px] text-ink-dim">{{ t('feature.sessionTabs.always') }}</div>
+            <!-- 从属开关：缩进 + 一道竖线指明它挂在上面那个开关底下。
+                 父开关关着时**不藏起来**，只是变灰点不动 —— 藏起来会让人以为
+                 这一项丢了，也不知道它跟上面的关系。 -->
+            <div v-if="f.id === 'sessionTabs'" class="border-t border-line/60">
+              <div
+                class="ml-4 flex items-center gap-3 border-l border-line py-2.5 pl-4"
+                :class="featureOn(settings, f.id) ? '' : 'opacity-45'"
+              >
+                <div class="min-w-0 flex-1">
+                  <div
+                    class="text-[12px]"
+                    :class="featureOn(settings, f.id) ? 'text-ink-dim' : 'text-ink-faint'"
+                  >
+                    {{ t('feature.sessionTabs.always') }}
+                  </div>
+                </div>
+                <USwitch
+                  :model-value="alwaysTabs"
+                  :disabled="!featureOn(settings, f.id)"
+                  :aria-label="t('feature.sessionTabs.always')"
+                  @update:model-value="emit('update:alwaysTabs', $event)"
+                />
               </div>
-              <USwitch
-                :model-value="alwaysTabs"
-                :aria-label="t('feature.sessionTabs.always')"
-                @update:model-value="emit('update:alwaysTabs', $event)"
-              />
             </div>
           </div>
         </template>
