@@ -17,6 +17,7 @@ import UDropMenu from './components/ui/UDropMenu.vue'
 import UIcon from './components/ui/UIcon.vue'
 import UIconMenu from './components/ui/UIconMenu.vue'
 import UToaster from './components/ui/UToaster.vue'
+import UTextarea from './components/ui/UTextarea.vue'
 import UTooltip from './components/ui/UTooltip.vue'
 import { confirm } from './components/ui/confirm'
 import { notify } from './components/ui/toast'
@@ -65,6 +66,7 @@ import {
   exitViewer,
   fit as fitTerminal,
   fitLocal,
+  readViewport,
   setSessionBackground,
   setViewerSize,
   write as writeTerminal,
@@ -105,6 +107,16 @@ const refreshing = ref(false)
 const colorDialogOpen = ref(false)
 const appColorOpen = ref(false)
 const appInfoOpen = ref(false)
+
+// 提取当前视口内容的小窗。内容是取出来之后随便改的文本框——
+// 终端里选字不顺手的场合（比如要用划词翻译）就从这里拿。
+const extractOpen = ref(false)
+const extractText = ref('')
+function openExtract() {
+  if (!selected.value) return
+  extractText.value = readViewport(selected.value.config.id)
+  extractOpen.value = true
+}
 
 // —— 应用内更新 ——
 //
@@ -470,6 +482,7 @@ const copyScriptDisabled = computed(
 // 「背景颜色」是改外观，跟它们不是一回事，单独隔一条线。
 // 所以「最终命令」排在「背景颜色」**上面**。
 const sessionMenuItems = computed(() => [
+  { key: 'extractViewport', label: t('menu.extractViewport'), icon: 'terminal' },
   { key: 'openScriptDir', label: t('menu.openScriptDir'), icon: 'folder', disabled: scriptPathDisabled.value },
   { key: 'copyScriptPath', label: t('menu.copyScriptPath'), icon: 'file', disabled: copyScriptDisabled.value },
   { key: 'openWorkDir', label: t('menu.openWorkDir'), icon: 'folder' },
@@ -499,6 +512,10 @@ async function onSessionMenu(key: string) {
   const id = session.config.id
   try {
     switch (key) {
+      case 'extractViewport':
+        // 纯前端：内容就在本地终端的缓冲里
+        openExtract()
+        break
       case 'openScriptDir':
         await openScriptDir(id)
         break
@@ -1413,6 +1430,21 @@ onBeforeUnmount(() => {
       :title="t('theme.terminalBackgroundTitle')"
       @change="onAppBackgroundChange"
     />
+
+    <!-- 提取出来的视口内容：可改、可删，满意了再复制。
+         终端里选字不顺手时（例如要用划词翻译），从这里拿一段干净的文字走 -->
+    <UDialog v-model="extractOpen" :title="t('extract.title')" width="720px">
+      <p class="mb-2 text-xs leading-relaxed text-ink-faint">{{ t('extract.hint') }}</p>
+      <UTextarea v-model="extractText" :rows="14" mono />
+      <template #footer>
+        <UButton variant="default" size="sm" @click="extractOpen = false">
+          {{ t('action.close') }}
+        </UButton>
+        <UButton variant="primary" size="sm" @click="copyToClipboard(extractText, 'msg.copied')">
+          {{ t('extract.copy') }}
+        </UButton>
+      </template>
+    </UDialog>
 
     <!-- 最终命令：只给看，不给改。用户在这里核对拼出来的那条对不对 -->
     <UDialog

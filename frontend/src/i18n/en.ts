@@ -62,6 +62,12 @@ export default {
     commandLine: 'Final command…',
     copyCommandLine: 'Copy',
     noCommand: '(nothing — this session has never been started)',
+    extractViewport: 'Extract the visible screen…',
+  },
+  extract: {
+    title: 'Visible screen',
+    hint: 'These are the lines currently on screen in the terminal. Edit or trim them, then copy.',
+    copy: 'Copy',
   },
   color: {
     title: 'Terminal background',

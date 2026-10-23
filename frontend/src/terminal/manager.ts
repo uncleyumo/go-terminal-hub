@@ -551,6 +551,28 @@ export function fitLocal(id: string): { cols: number; rows: number } | null {
   return { cols: entry.term.cols, rows: entry.term.rows }
 }
 
+/**
+ * 把当前视口里的文字取出来。
+ *
+ * 取的是屏幕上看得见的那几行，不是整个回滚历史——用户要的是眼前这一屏。
+ * 往上翻着历史的时候取的是正在看的那一段（不是最底下那段）。
+ */
+export function readViewport(id: string): string {
+  const entry = entries.get(id)
+  if (!entry) return ''
+  const buf = entry.term.buffer.active
+  const top = buf.viewportY
+  const lines: string[] = []
+  for (let y = top; y < top + entry.term.rows; y++) {
+    const line = buf.getLine(y)
+    // 末尾的空格去掉：终端右边那一大片空白不是内容
+    lines.push(line ? line.translateToString(true) : '')
+  }
+  // 底下几行是屏幕没画到的地方（空的），留着只会让复制出来的东西尾巴上一串空行
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  return lines.join('\n')
+}
+
 // 拖窗口时尺寸一帧变一次，攒够 120ms 再发，别把后端打爆。
 const fitTimers = new Map<string, number>()
 

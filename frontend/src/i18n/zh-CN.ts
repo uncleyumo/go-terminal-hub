@@ -63,6 +63,12 @@ export default {
     commandLine: '最终命令…',
     copyCommandLine: '复制',
     noCommand: '（空 —— 这条会话还没启动过）',
+    extractViewport: '提取当前视口…',
+  },
+  extract: {
+    title: '当前视口的内容',
+    hint: '下面是终端里现在看得见的那几行。可以直接改、删，满意了再复制。',
+    copy: '复制',
   },
   color: {
     title: '终端背景色',
